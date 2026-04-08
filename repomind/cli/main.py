@@ -11,7 +11,7 @@ import typer
 from repomind.core.config import ConfigLoader, RepoMindConfig
 from repomind.core.doctor import DoctorService
 from repomind.core.embeddings import EmbeddingError, SentenceTransformerEmbedder
-from repomind.core.indexer import CodeIndexer, IndexProgress
+from repomind.core.indexer import IGNORED_DIRECTORIES, CodeIndexer, IndexProgress
 from repomind.core.llm import LLMRouter
 from repomind.core.retriever import NO_INDEX_MESSAGE, CodeRetriever, RetrievalResult
 from repomind.core.summarizer import SummaryBuilder
@@ -82,7 +82,12 @@ def _warn_free_mode() -> None:
 def _warn_ai_unavailable() -> None:
     """Show warning when keys exist but provider call is unavailable."""
     output.warning("AI provider unavailable. Showing relevant code instead.")
-    output.info("Tip: Verify API key validity, network access, and provider SDK installation.")
+    output.info("Tip: Install provider SDKs (`pip install openai anthropic`) and verify API keys.")
+
+
+def _has_any_llm_key(config: RepoMindConfig) -> bool:
+    """Return True when any optional LLM provider key is configured."""
+    return bool(config.openai_api_key or config.anthropic_api_key)
 
 
 def _split_ai_answer(answer: str) -> tuple[str, str]:
@@ -235,7 +240,7 @@ def ask(
     llm_client = LLMRouter(config).resolve()
     ai_answer: str | None = None
     provider: str | None = None
-    ai_call_failed = False
+    ai_unavailable = llm_client is None and _has_any_llm_key(config)
 
     if llm_client is not None:
         try:
@@ -247,7 +252,7 @@ def ask(
             provider = llm_response.provider
         except Exception as exc:  # noqa: BLE001
             logger.warning("LLM answer failed, falling back to local summary: %s", exc)
-            ai_call_failed = True
+            ai_unavailable = True
 
     summary = summarizer.build_for_question(
         question=question,
@@ -263,7 +268,7 @@ def ask(
         output.warning("No relevant files found in current index.")
         output.info("Try rephrasing your question or increase `--top-k`.")
 
-    if not summary.llm_provider and ai_call_failed:
+    if not summary.llm_provider and ai_unavailable:
         _warn_ai_unavailable()
     elif not summary.llm_provider:
         _warn_free_mode()
@@ -330,8 +335,12 @@ def explain(
 
     llm_client = LLMRouter(config).resolve()
     if llm_client is None:
-        _warn_free_mode()
-        output.info("Next step: set an API key to enable AI-enhanced explanations.")
+        if _has_any_llm_key(config):
+            _warn_ai_unavailable()
+            output.info("Next step: install provider SDKs and verify your API keys.")
+        else:
+            _warn_free_mode()
+            output.info("Next step: set an API key to enable AI-enhanced explanations.")
         return
 
     try:
@@ -394,6 +403,59 @@ def doctor() -> None:
         output.info("Install local embeddings support with `pip install sentence-transformers`.")
     if not report.repo_indexed:
         output.info("Run `repomind index` in this repository to create a local index.")
+
+
+@app.command()
+def overview(
+    path: Annotated[
+        Path,
+        typer.Argument(help="Path to the project root to inspect."),
+    ] = Path("."),
+) -> None:
+    """Show high-level repository overview: structure, modules, and flow."""
+    root = path.resolve()
+    if not root.exists() or not root.is_dir():
+        output.error(f"Project path does not exist or is not a directory: {path}")
+        raise typer.Exit(code=1)
+
+    output.section("RepoMind Overview")
+    output.kv("Project", str(root))
+
+    output.subsection("• project structure")
+    top_level = sorted(
+        item.name + ("/" if item.is_dir() else "")
+        for item in root.iterdir()
+        if item.name not in IGNORED_DIRECTORIES and not item.name.startswith(".")
+    )
+    if not top_level:
+        output.info("- (no visible files/directories)")
+    else:
+        for item in top_level[:20]:
+            output.bullet(item)
+        if len(top_level) > 20:
+            output.info(f"... and {len(top_level) - 20} more")
+
+    output.subsection("• modules")
+    modules: list[str] = []
+    for file_path in root.rglob("*.py"):
+        if any(part in IGNORED_DIRECTORIES for part in file_path.parts):
+            continue
+        if any(part.startswith(".") for part in file_path.parts):
+            continue
+        modules.append(str(file_path.relative_to(root)))
+    modules.sort()
+    if not modules:
+        output.info("- (no Python modules found)")
+    else:
+        for module in modules[:20]:
+            output.bullet(module)
+        if len(modules) > 20:
+            output.info(f"... and {len(modules) - 20} more")
+
+    output.subsection("• flow")
+    output.bullet("index: scan -> chunk -> embed -> store in .repomind/")
+    output.bullet("ask: embed question -> retrieve top-k chunks -> optional AI answer")
+    output.bullet("explain: inspect file -> local explanation -> optional AI enhancement")
 
 
 if __name__ == "__main__":

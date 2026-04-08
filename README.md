@@ -58,6 +58,7 @@ Where is auth handled?
 
 ```bash
 repomind doctor
+repomind overview .
 repomind index .
 repomind index . --update
 repomind ask "How does auth flow?"
