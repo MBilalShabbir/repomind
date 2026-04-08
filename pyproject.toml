@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "repomind"
+version = "0.1.0"
+description = "Index your repository and ask context-aware questions using embeddings and optional LLMs."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "RepoMind Maintainers" }
+]
+dependencies = [
+  "typer>=0.12.3,<1.0.0",
+  "faiss-cpu>=1.8.0.post1",
+  "sentence-transformers>=3.0.1",
+  "numpy>=1.26.4",
+]
+
+[project.optional-dependencies]
+llm = [
+  "openai>=1.52.0",
+  "anthropic>=0.39.0",
+]
+
+[project.scripts]
+repomind = "repomind.cli.main:app"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["repomind*"]
