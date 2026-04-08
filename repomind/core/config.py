@@ -15,6 +15,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 DEFAULT_CONFIG_FILE = ".repomind/config.toml"
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_MAX_FILE_SIZE_BYTES = 1024 * 1024  # 1 MB
 
 
 @dataclass(slots=True)
@@ -26,6 +27,7 @@ class RepoMindConfig:
     index_path: Path
     metadata_path: Path
     embedding_model: str
+    max_file_size_bytes: int
     openai_api_key: str | None
     anthropic_api_key: str | None
     llm_provider_preference: str | None
@@ -63,6 +65,14 @@ class ConfigLoader:
                 default=DEFAULT_EMBEDDING_MODEL,
             )
         )
+        max_file_size_bytes = int(
+            self._resolve_value(
+                env_key="REPOMIND_MAX_FILE_SIZE_BYTES",
+                file_config=file_config,
+                file_key="max_file_size_bytes",
+                default=DEFAULT_MAX_FILE_SIZE_BYTES,
+            )
+        )
 
         llm_preference = self._resolve_value(
             env_key="REPOMIND_LLM_PROVIDER",
@@ -77,6 +87,7 @@ class ConfigLoader:
             index_path=data_dir / "index.faiss",
             metadata_path=data_dir / "metadata.jsonl",
             embedding_model=embedding_model,
+            max_file_size_bytes=max_file_size_bytes,
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
             llm_provider_preference=str(llm_preference) if llm_preference else None,

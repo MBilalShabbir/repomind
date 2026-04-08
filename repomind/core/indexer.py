@@ -18,6 +18,23 @@ from repomind.core.faiss_store import require_faiss
 logger = logging.getLogger(__name__)
 
 IGNORED_DIRECTORIES = {".git", "node_modules", "venv", "__pycache__", ".repomind"}
+IGNORED_DIRECTORIES |= {
+    ".venv",
+    "dist",
+    "build",
+    "target",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".idea",
+    ".vscode",
+}
+IGNORED_FILE_NAMES = {
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "poetry.lock",
+    "Pipfile.lock",
+}
 
 ProgressCallback = Callable[["IndexProgress"], None]
 
@@ -70,13 +87,15 @@ class IndexStats:
 class FileScanner:
     """Scans source files recursively while skipping known noisy directories."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, max_file_size_bytes: int) -> None:
         """Initialize scanner.
 
         Args:
             root: Root directory to scan.
+            max_file_size_bytes: Maximum file size to index.
         """
         self._root = root.resolve()
+        self._max_file_size_bytes = max_file_size_bytes
 
     def list_files(self) -> list[Path]:
         """Return indexable files under root directory."""
@@ -86,16 +105,22 @@ class FileScanner:
                 continue
             if any(part in IGNORED_DIRECTORIES for part in path.parts):
                 continue
+            if path.name in IGNORED_FILE_NAMES:
+                continue
+            if path.name.endswith((".min.js", ".min.css")):
+                continue
             if path.name.startswith("."):
                 continue
-            if not self._is_text_file(path):
+            if not self._is_text_file(path, self._max_file_size_bytes):
                 continue
             files.append(path)
         return files
 
     @staticmethod
-    def _is_text_file(path: Path) -> bool:
+    def _is_text_file(path: Path, max_file_size_bytes: int) -> bool:
         try:
+            if path.stat().st_size > max_file_size_bytes:
+                return False
             with path.open("rb") as fp:
                 sample = fp.read(2048)
             return b"\x00" not in sample
@@ -225,7 +250,7 @@ class CodeIndexer:
         """Run a full index build from source files."""
         faiss = require_faiss("indexing")
 
-        files = FileScanner(root).list_files()
+        files = FileScanner(root, self._config.max_file_size_bytes).list_files()
         self._emit(
             progress_callback,
             IndexProgress(
@@ -334,7 +359,7 @@ class CodeIndexer:
             logger.warning("Index/metadata mismatch detected; falling back to full reindex.")
             return self._full_index(root, progress_callback)
 
-        files = FileScanner(root).list_files()
+        files = FileScanner(root, self._config.max_file_size_bytes).list_files()
         self._emit(
             progress_callback,
             IndexProgress(
