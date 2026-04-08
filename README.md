@@ -11,6 +11,7 @@ RepoMind is a production-focused CLI tool that indexes a repository with local e
   - Generates local embeddings
   - Persists FAISS index + metadata in `.repomind/` in the current repository
   - Supports incremental updates with `--update` (changed/new/deleted files only)
+  - Shows indexing progress phases (scan, embed, persist)
 
 - `repomind ask "<question>"`
   - Retrieves top-k relevant chunks
