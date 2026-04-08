@@ -14,7 +14,7 @@ from repomind.core.embeddings import Embedder
 from repomind.core.faiss_store import require_faiss
 from repomind.core.indexer import ChunkMetadata
 
-NO_INDEX_MESSAGE = "No RepoMind index found. Run 'repomind index' in this repo first."
+NO_INDEX_MESSAGE = "No RepoMind index found. Run 'repomind index' first."
 
 
 @dataclass(slots=True)

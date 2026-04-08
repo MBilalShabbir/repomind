@@ -57,6 +57,7 @@ def _ensure_repo_index_exists(config: RepoMindConfig) -> None:
         or not config.metadata_path.exists()
     ):
         output.error(NO_INDEX_MESSAGE)
+        output.info("Next step: run `repomind index .` in your project root.")
         raise typer.Exit(code=1)
 
 
@@ -76,6 +77,12 @@ def _warn_free_mode() -> None:
     """Show free-mode warning and upgrade hint."""
     output.warning("No AI provider configured. Showing relevant code instead.")
     output.info("Tip: Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` to enable Premium mode.")
+
+
+def _warn_ai_unavailable() -> None:
+    """Show warning when keys exist but provider call is unavailable."""
+    output.warning("AI provider unavailable. Showing relevant code instead.")
+    output.info("Tip: Verify API key validity, network access, and provider SDK installation.")
 
 
 def _split_ai_answer(answer: str) -> tuple[str, str]:
@@ -173,6 +180,9 @@ def index(
     if update:
         output.kv("Updated files", str(stats.updated_files))
         output.kv("Removed files", str(stats.removed_files))
+        output.info("Next step: run `repomind ask \"<your question>\"`.")
+    else:
+        output.info("Next step: run `repomind ask \"<your question>\"`.")
 
 
 @app.command()
@@ -194,6 +204,11 @@ def ask(
     ] = "default",
 ) -> None:
     """Answer a repository question using semantic retrieval and optional LLMs."""
+    normalized_format = output_format.strip().lower()
+    if normalized_format not in {"default", "prompt"}:
+        output.error("Invalid --format value. Use 'default' or 'prompt'.")
+        raise typer.Exit(code=1)
+
     config, embedder = _load_runtime_context()
     _ensure_repo_index_exists(config)
     retriever = CodeRetriever(config=config, embedder=embedder)
@@ -212,11 +227,6 @@ def ask(
         output.error(f"Retrieval failed: {exc}")
         raise typer.Exit(code=1) from exc
 
-    normalized_format = output_format.strip().lower()
-    if normalized_format not in {"default", "prompt"}:
-        output.error("Invalid --format value. Use 'default' or 'prompt'.")
-        raise typer.Exit(code=1)
-
     if normalized_format == "prompt":
         typer.echo(_build_prompt_only_output(question=question, results=results))
         return
@@ -225,6 +235,7 @@ def ask(
     llm_client = LLMRouter(config).resolve()
     ai_answer: str | None = None
     provider: str | None = None
+    ai_call_failed = False
 
     if llm_client is not None:
         try:
@@ -236,6 +247,7 @@ def ask(
             provider = llm_response.provider
         except Exception as exc:  # noqa: BLE001
             logger.warning("LLM answer failed, falling back to local summary: %s", exc)
+            ai_call_failed = True
 
     summary = summarizer.build_for_question(
         question=question,
@@ -249,8 +261,11 @@ def ask(
         output.bullet(file_path)
     if not summary.relevant_files:
         output.warning("No relevant files found in current index.")
+        output.info("Try rephrasing your question or increase `--top-k`.")
 
-    if not summary.llm_provider:
+    if not summary.llm_provider and ai_call_failed:
+        _warn_ai_unavailable()
+    elif not summary.llm_provider:
         _warn_free_mode()
 
     output.section("📄 Code Snippets")
@@ -259,6 +274,7 @@ def ask(
         output.info(_truncate_text(snippet))
     if not summary.snippets:
         output.warning("No snippets available for this question.")
+        output.info("Try running `repomind index --update` and ask again.")
 
     if summary.llm_provider:
         output.section("🧠 Answer")
@@ -272,6 +288,8 @@ def ask(
 
         output.section("🤖 Paste into AI")
         output.info(summary.prompt)
+    else:
+        output.info("Next step: set an API key for AI answers, or keep asking for code retrieval.")
 
 
 @app.command()
@@ -313,6 +331,7 @@ def explain(
     llm_client = LLMRouter(config).resolve()
     if llm_client is None:
         _warn_free_mode()
+        output.info("Next step: set an API key to enable AI-enhanced explanations.")
         return
 
     try:
@@ -321,7 +340,7 @@ def explain(
         output.info(response.text)
     except Exception as exc:  # noqa: BLE001
         logger.warning("LLM explanation failed, using local explanation: %s", exc)
-        output.warning(f"AI enhancement unavailable: {exc}")
+        _warn_ai_unavailable()
 
 
 @app.command()

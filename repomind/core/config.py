@@ -30,7 +30,6 @@ class RepoMindConfig:
     max_file_size_bytes: int
     openai_api_key: str | None
     anthropic_api_key: str | None
-    llm_provider_preference: str | None
 
 
 class ConfigLoader:
@@ -75,13 +74,6 @@ class ConfigLoader:
             key="REPOMIND_MAX_FILE_SIZE_BYTES",
         )
 
-        llm_preference = self._resolve_value(
-            env_key="REPOMIND_LLM_PROVIDER",
-            file_config=file_config,
-            file_key="llm_provider",
-            default=None,
-        )
-
         config = RepoMindConfig(
             project_root=self._project_root,
             data_dir=data_dir,
@@ -91,7 +83,6 @@ class ConfigLoader:
             max_file_size_bytes=max_file_size_bytes,
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
-            llm_provider_preference=str(llm_preference) if llm_preference else None,
         )
         return config
 
