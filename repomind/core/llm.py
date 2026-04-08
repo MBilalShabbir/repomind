@@ -118,15 +118,10 @@ class LLMRouter:
 
     def resolve(self) -> LLMClient | None:
         """Return an initialized LLM client if one is available."""
-        preference = (self._config.llm_provider_preference or "").lower().strip()
-
-        if preference == "openai":
-            return self._try_openai()
-        if preference == "anthropic":
-            return self._try_anthropic()
-
-        # Default strategy: prioritize OpenAI then Anthropic.
-        return self._try_openai() or self._try_anthropic()
+        # Automatic premium detection order:
+        # 1) Anthropic when ANTHROPIC_API_KEY is configured
+        # 2) OpenAI when OPENAI_API_KEY is configured
+        return self._try_anthropic() or self._try_openai()
 
     def _try_openai(self) -> LLMClient | None:
         key = self._config.openai_api_key

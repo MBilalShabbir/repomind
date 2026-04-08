@@ -25,7 +25,9 @@ RepoMind is a production-focused CLI tool that indexes a repository with local e
   - Skips `.git`, `node_modules`, `venv`, `__pycache__`, `.repomind`
   - Chunks code into overlapping segments
   - Generates local embeddings
-  - Persists FAISS index + metadata in `.repomind/`
+  - Persists FAISS index + metadata in `.repomind/` in the current repository
+  - Supports incremental updates with `--update` (changed/new/deleted files only)
+  - Shows indexing progress phases (scan, embed, persist)
 
 - `repomind ask "<question>"`
   - Retrieves top-k relevant chunks
@@ -66,7 +68,6 @@ RepoMind reads configuration from:
 
 Supported settings:
 
-- `REPOMIND_DATA_DIR` (default: `.repomind`)
 - `REPOMIND_EMBEDDING_MODEL` (default: `sentence-transformers/all-MiniLM-L6-v2`)
 - `REPOMIND_LLM_PROVIDER` (`openai` or `anthropic`, optional)
 - `OPENAI_API_KEY` (optional)
@@ -75,7 +76,6 @@ Supported settings:
 Example `.repomind/config.toml`:
 
 ```toml
-data_dir = ".repomind"
 embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
 llm_provider = "openai"
 ```
@@ -85,6 +85,7 @@ llm_provider = "openai"
 ```bash
 repomind doctor
 repomind index .
+repomind index --update
 repomind ask "Where is auth token validation implemented?" --top-k 6
 repomind explain repomind/core/indexer.py
 ```

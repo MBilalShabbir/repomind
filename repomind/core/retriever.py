@@ -11,6 +11,7 @@ import numpy as np
 
 from repomind.core.config import RepoMindConfig
 from repomind.core.embeddings import Embedder
+from repomind.core.faiss_store import require_faiss
 from repomind.core.indexer import ChunkMetadata
 
 NO_INDEX_MESSAGE = "No RepoMind index found. Run 'repomind index' in this repo first."
@@ -34,7 +35,7 @@ class CodeRetriever:
 
     def retrieve(self, question: str, top_k: int = 5) -> list[RetrievalResult]:
         """Retrieve top-k chunks relevant to a user question."""
-        faiss = _require_faiss()
+        faiss = require_faiss("running retrieval")
         if top_k <= 0:
             raise ValueError("top_k must be greater than zero")
 
@@ -59,7 +60,7 @@ class CodeRetriever:
     def _load_index(path: Path) -> Any:
         if not path.exists():
             raise FileNotFoundError(NO_INDEX_MESSAGE)
-        faiss = _require_faiss()
+        faiss = require_faiss("running retrieval")
         return faiss.read_index(str(path))
 
     @staticmethod
@@ -78,14 +79,3 @@ class CodeRetriever:
         if not rows:
             raise RuntimeError("Metadata is empty. Rebuild index with 'repomind index'.")
         return rows
-
-
-def _require_faiss() -> Any:
-    """Import faiss lazily to support `repomind doctor` without hard dependency."""
-    try:
-        import faiss  # type: ignore
-    except ImportError as exc:
-        raise RuntimeError(
-            "faiss-cpu is not installed. Install dependencies before running retrieval."
-        ) from exc
-    return faiss

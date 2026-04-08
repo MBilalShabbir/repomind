@@ -7,16 +7,19 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable
 
 import numpy as np
 
 from repomind.core.config import RepoMindConfig
 from repomind.core.embeddings import Embedder
+from repomind.core.faiss_store import require_faiss
 
 logger = logging.getLogger(__name__)
 
 IGNORED_DIRECTORIES = {".git", "node_modules", "venv", "__pycache__", ".repomind"}
+
+ProgressCallback = Callable[["IndexProgress"], None]
 
 
 @dataclass(slots=True)
@@ -40,6 +43,17 @@ class FileFingerprint:
 
 
 @dataclass(slots=True)
+class IndexProgress:
+    """Progress signal emitted during indexing."""
+
+    phase: str
+    message: str
+    processed_files: int = 0
+    total_files: int = 0
+    processed_chunks: int = 0
+
+
+@dataclass(slots=True)
 class IndexStats:
     """Summary of indexing output."""
 
@@ -49,6 +63,8 @@ class IndexStats:
     metadata_path: Path
     updated_files: int = 0
     removed_files: int = 0
+    scanned_files: int = 0
+    mode: str = "full"
 
 
 class FileScanner:
@@ -62,8 +78,9 @@ class FileScanner:
         """
         self._root = root.resolve()
 
-    def iter_files(self) -> Iterable[Path]:
-        """Yield indexable files under root directory."""
+    def list_files(self) -> list[Path]:
+        """Return indexable files under root directory."""
+        files: list[Path] = []
         for path in self._root.rglob("*"):
             if path.is_dir():
                 continue
@@ -73,7 +90,8 @@ class FileScanner:
                 continue
             if not self._is_text_file(path):
                 continue
-            yield path
+            files.append(path)
+        return files
 
     @staticmethod
     def _is_text_file(path: Path) -> bool:
@@ -101,35 +119,61 @@ class CodeChunker:
         self._overlap = overlap
 
     def split(self, text: str) -> list[tuple[str, int, int]]:
-        """Split text into chunks preserving approximate line ranges."""
-        if not text.strip():
+        """Split text into chunks preserving line ranges."""
+        raw_lines = text.splitlines()
+        if not raw_lines:
             return []
 
-        lines = text.splitlines(keepends=True)
         chunks: list[tuple[str, int, int]] = []
         buffer: list[str] = []
+        buffer_chars = 0
         start_line = 1
-        current_len = 0
 
-        for idx, line in enumerate(lines, start=1):
+        for line in raw_lines:
+            line_len = len(line) + 1
+            if buffer and buffer_chars + line_len > self._chunk_size:
+                chunk_text = "\n".join(buffer)
+                end_line = start_line + len(buffer) - 1
+                if chunk_text.strip():
+                    chunks.append((chunk_text, start_line, end_line))
+
+                overlap_lines = self._tail_lines_for_overlap(buffer)
+                buffer = overlap_lines
+                buffer_chars = self._estimated_chars(buffer)
+                start_line = max(1, end_line - len(buffer) + 1)
+
             buffer.append(line)
-            current_len += len(line)
-            if current_len >= self._chunk_size:
-                chunk_text = "".join(buffer)
-                chunks.append((chunk_text, start_line, idx))
-
-                overlap_text = chunk_text[-self._overlap :]
-                overlap_lines = overlap_text.splitlines(keepends=True)
-                buffer = overlap_lines[:] if overlap_lines else []
-                current_len = sum(len(x) for x in buffer)
-                start_line = max(1, idx - len(buffer) + 1)
+            buffer_chars += line_len
 
         if buffer:
-            chunk_text = "".join(buffer)
+            chunk_text = "\n".join(buffer)
+            end_line = start_line + len(buffer) - 1
             if chunk_text.strip():
-                chunks.append((chunk_text, start_line, len(lines)))
+                chunks.append((chunk_text, start_line, end_line))
 
         return chunks
+
+    def _tail_lines_for_overlap(self, lines: list[str]) -> list[str]:
+        """Return a suffix of lines that approximates overlap character budget."""
+        selected: list[str] = []
+        consumed = 0
+        for line in reversed(lines):
+            line_len = len(line) + 1
+            if selected and consumed + line_len > self._overlap:
+                break
+            selected.append(line)
+            consumed += line_len
+            if consumed >= self._overlap:
+                break
+        selected.reverse()
+        return selected
+
+    @staticmethod
+    def _estimated_chars(lines: list[str]) -> int:
+        """Estimate character count for a line list."""
+        if not lines:
+            return 0
+        return sum(len(line) + 1 for line in lines)
 
 
 class CodeIndexer:
@@ -142,7 +186,12 @@ class CodeIndexer:
         self._chunker = CodeChunker()
         self._manifest_path = self._config.data_dir / "files.json"
 
-    def index(self, root: Path, update: bool = False) -> IndexStats:
+    def index(
+        self,
+        root: Path,
+        update: bool = False,
+        progress_callback: ProgressCallback | None = None,
+    ) -> IndexStats:
         """Build and persist FAISS index from the given root directory."""
         root = root.resolve()
         self._validate_root(root)
@@ -153,44 +202,90 @@ class CodeIndexer:
         self._config.data_dir.mkdir(parents=True, exist_ok=True)
 
         if update and self._has_existing_index():
-            return self._incremental_index(root)
+            return self._incremental_index(root, progress_callback)
 
-        return self._full_index(root)
+        mode = "full"
+        if update:
+            self._emit(
+                progress_callback,
+                IndexProgress(
+                    phase="prepare",
+                    message="No previous incremental state found. Running full indexing.",
+                ),
+            )
+        stats = self._full_index(root, progress_callback)
+        stats.mode = mode
+        return stats
 
-    def _full_index(self, root: Path) -> IndexStats:
+    def _full_index(
+        self,
+        root: Path,
+        progress_callback: ProgressCallback | None,
+    ) -> IndexStats:
         """Run a full index build from source files."""
-        faiss = _require_faiss()
-        scanner = FileScanner(root)
+        faiss = require_faiss("indexing")
+
+        files = FileScanner(root).list_files()
+        self._emit(
+            progress_callback,
+            IndexProgress(
+                phase="scan",
+                message=f"Scanning {len(files)} files...",
+                total_files=len(files),
+            ),
+        )
 
         documents: list[str] = []
-        metadatas: list[ChunkMetadata] = []
+        metadata_rows: list[ChunkMetadata] = []
         manifest: dict[str, FileFingerprint] = {}
 
-        for path in scanner.iter_files():
+        for idx, path in enumerate(files, start=1):
             content = _read_file_content(path)
             if content is None:
                 continue
 
-            relative_path = str(path.relative_to(self._config.project_root))
-            fingerprint = _fingerprint_file(path=path, content=content)
-            manifest[relative_path] = fingerprint
+            rel_path = str(path.relative_to(self._config.project_root))
+            manifest[rel_path] = _fingerprint_file(path=path, content=content)
 
-            chunks = self._chunker.split(content)
-            for chunk_text, start_line, end_line in chunks:
+            for chunk_text, start_line, end_line in self._chunker.split(content):
                 documents.append(chunk_text)
-                metadatas.append(
+                metadata_rows.append(
                     ChunkMetadata(
-                        chunk_id=len(metadatas),
-                        file_path=relative_path,
+                        chunk_id=len(metadata_rows),
+                        file_path=rel_path,
                         start_line=start_line,
                         end_line=end_line,
                         text=chunk_text,
                     )
                 )
 
-        if not metadatas:
-            raise RuntimeError("No indexable files were found in the target directory.")
+            if idx == 1 or idx % 25 == 0 or idx == len(files):
+                self._emit(
+                    progress_callback,
+                    IndexProgress(
+                        phase="scan",
+                        message="Chunking files",
+                        processed_files=idx,
+                        total_files=len(files),
+                        processed_chunks=len(metadata_rows),
+                    ),
+                )
 
+        if not metadata_rows:
+            raise RuntimeError(
+                "No indexable source files found. Add text/code files and run 'repomind index' again."
+            )
+
+        self._emit(
+            progress_callback,
+            IndexProgress(
+                phase="embed",
+                message=f"Embedding {len(metadata_rows)} chunks...",
+                processed_files=len(files),
+                total_files=len(files),
+                processed_chunks=len(metadata_rows),
+            ),
+        )
         vectors = self._embedder.embed_documents(documents).vectors
         if vectors.ndim != 2:
             raise RuntimeError("Embedding provider returned invalid vector dimensions.")
@@ -199,34 +294,60 @@ class CodeIndexer:
         index = faiss.IndexFlatIP(vectors.shape[1])
         index.add(vectors)
 
-        self._persist(index=index, metadatas=metadatas, manifest=manifest)
+        self._persist(index=index, metadata_rows=metadata_rows, manifest=manifest)
+        self._emit(
+            progress_callback,
+            IndexProgress(
+                phase="persist",
+                message="Index artifacts saved.",
+                processed_files=len(files),
+                total_files=len(files),
+                processed_chunks=len(metadata_rows),
+            ),
+        )
 
-        files_indexed = len({item.file_path for item in metadatas})
+        files_indexed = len({row.file_path for row in metadata_rows})
         return IndexStats(
             files_indexed=files_indexed,
-            chunks_indexed=len(metadatas),
+            chunks_indexed=len(metadata_rows),
             index_path=self._config.index_path,
             metadata_path=self._config.metadata_path,
             updated_files=files_indexed,
             removed_files=0,
+            scanned_files=len(files),
+            mode="full",
         )
 
-    def _incremental_index(self, root: Path) -> IndexStats:
+    def _incremental_index(
+        self,
+        root: Path,
+        progress_callback: ProgressCallback | None,
+    ) -> IndexStats:
         """Update index by embedding only changed/new files and removing deleted files."""
-        faiss = _require_faiss()
-        old_metadata = self._load_metadata(self._config.metadata_path)
+        faiss = require_faiss("indexing")
+
+        old_metadata_rows = self._load_metadata(self._config.metadata_path)
         old_manifest = self._load_manifest()
-
         old_index = faiss.read_index(str(self._config.index_path))
-        if old_index.ntotal != len(old_metadata):
+
+        if old_index.ntotal != len(old_metadata_rows):
             logger.warning("Index/metadata mismatch detected; falling back to full reindex.")
-            return self._full_index(root)
+            return self._full_index(root, progress_callback)
 
-        scanner = FileScanner(root)
+        files = FileScanner(root).list_files()
+        self._emit(
+            progress_callback,
+            IndexProgress(
+                phase="scan",
+                message=f"Scanning {len(files)} files for changes...",
+                total_files=len(files),
+            ),
+        )
+
         current_manifest: dict[str, FileFingerprint] = {}
-        changed_content: dict[str, str] = {}
+        changed_content_by_path: dict[str, str] = {}
 
-        for path in scanner.iter_files():
+        for idx, path in enumerate(files, start=1):
             content = _read_file_content(path)
             if content is None:
                 continue
@@ -237,31 +358,41 @@ class CodeIndexer:
 
             previous = old_manifest.get(rel_path)
             if previous is None or previous.sha256 != fingerprint.sha256:
-                changed_content[rel_path] = content
+                changed_content_by_path[rel_path] = content
+
+            if idx == 1 or idx % 25 == 0 or idx == len(files):
+                self._emit(
+                    progress_callback,
+                    IndexProgress(
+                        phase="scan",
+                        message="Detecting changed files",
+                        processed_files=idx,
+                        total_files=len(files),
+                    ),
+                )
 
         current_paths = set(current_manifest)
         removed_paths = set(old_manifest) - current_paths
-        changed_paths = set(changed_content)
+        changed_paths = set(changed_content_by_path)
         unchanged_paths = current_paths - changed_paths
 
-        unchanged_rows: list[ChunkMetadata] = []
-        unchanged_indices: list[int] = []
-        for idx, item in enumerate(old_metadata):
-            if item.file_path in unchanged_paths:
-                unchanged_rows.append(item)
-                unchanged_indices.append(idx)
+        unchanged_rows, unchanged_indices = _select_unchanged_rows(
+            old_metadata_rows,
+            unchanged_paths,
+        )
 
         unchanged_vectors = np.empty((0, 0), dtype=np.float32)
         if unchanged_indices:
             unchanged_vectors = np.vstack(
-                [old_index.reconstruct(int(idx)) for idx in unchanged_indices]
+                [old_index.reconstruct(int(index)) for index in unchanged_indices]
             ).astype(np.float32)
 
         changed_rows: list[ChunkMetadata] = []
         changed_docs: list[str] = []
         for rel_path in sorted(changed_paths):
-            chunks = self._chunker.split(changed_content[rel_path])
-            for chunk_text, start_line, end_line in chunks:
+            for chunk_text, start_line, end_line in self._chunker.split(
+                changed_content_by_path[rel_path]
+            ):
                 changed_docs.append(chunk_text)
                 changed_rows.append(
                     ChunkMetadata(
@@ -273,6 +404,20 @@ class CodeIndexer:
                     )
                 )
 
+        self._emit(
+            progress_callback,
+            IndexProgress(
+                phase="embed",
+                message=(
+                    f"Embedding {len(changed_rows)} changed chunks "
+                    f"from {len(changed_paths)} files..."
+                ),
+                processed_files=len(files),
+                total_files=len(files),
+                processed_chunks=len(changed_rows),
+            ),
+        )
+
         changed_vectors = np.empty((0, 0), dtype=np.float32)
         if changed_docs:
             changed_vectors = self._embedder.embed_documents(changed_docs).vectors
@@ -281,33 +426,32 @@ class CodeIndexer:
 
         all_rows = unchanged_rows + changed_rows
         if not all_rows:
-            raise RuntimeError("No indexable files were found in the target directory.")
+            raise RuntimeError(
+                "No indexable source files found. Add text/code files and run 'repomind index' again."
+            )
 
-        if unchanged_vectors.size == 0 and changed_vectors.size == 0:
-            raise RuntimeError("Unable to build vectors from current repository state.")
+        vectors = _combine_vectors(unchanged_vectors, changed_vectors)
 
-        if unchanged_vectors.size == 0:
-            vectors = changed_vectors
-        elif changed_vectors.size == 0:
-            vectors = unchanged_vectors
-        else:
-            if unchanged_vectors.shape[1] != changed_vectors.shape[1]:
-                logger.warning(
-                    "Embedding dimension changed; falling back to full reindex."
-                )
-                return self._full_index(root)
-            vectors = np.vstack([unchanged_vectors, changed_vectors]).astype(np.float32)
-
-        for idx, item in enumerate(all_rows):
-            item.chunk_id = idx
+        for idx, row in enumerate(all_rows):
+            row.chunk_id = idx
 
         faiss.normalize_L2(vectors)
         index = faiss.IndexFlatIP(vectors.shape[1])
         index.add(vectors)
 
-        self._persist(index=index, metadatas=all_rows, manifest=current_manifest)
+        self._persist(index=index, metadata_rows=all_rows, manifest=current_manifest)
+        self._emit(
+            progress_callback,
+            IndexProgress(
+                phase="persist",
+                message="Incremental index update saved.",
+                processed_files=len(files),
+                total_files=len(files),
+                processed_chunks=len(all_rows),
+            ),
+        )
 
-        files_indexed = len({item.file_path for item in all_rows})
+        files_indexed = len({row.file_path for row in all_rows})
         return IndexStats(
             files_indexed=files_indexed,
             chunks_indexed=len(all_rows),
@@ -315,26 +459,28 @@ class CodeIndexer:
             metadata_path=self._config.metadata_path,
             updated_files=len(changed_paths),
             removed_files=len(removed_paths),
+            scanned_files=len(files),
+            mode="update",
         )
 
     def _persist(
         self,
         *,
         index: Any,
-        metadatas: list[ChunkMetadata],
+        metadata_rows: list[ChunkMetadata],
         manifest: dict[str, FileFingerprint],
     ) -> None:
         """Persist FAISS index, metadata, and fingerprint manifest."""
-        faiss = _require_faiss()
+        faiss = require_faiss("indexing")
         faiss.write_index(index, str(self._config.index_path))
-        self._write_metadata(metadatas)
+        self._write_metadata(metadata_rows)
         self._write_manifest(manifest)
 
-    def _write_metadata(self, metadatas: list[ChunkMetadata]) -> None:
+    def _write_metadata(self, metadata_rows: list[ChunkMetadata]) -> None:
         """Persist chunk metadata in JSONL format."""
         with self._config.metadata_path.open("w", encoding="utf-8") as fp:
-            for item in metadatas:
-                fp.write(json.dumps(asdict(item), ensure_ascii=False) + "\n")
+            for row in metadata_rows:
+                fp.write(json.dumps(asdict(row), ensure_ascii=False) + "\n")
 
     def _load_metadata(self, path: Path) -> list[ChunkMetadata]:
         """Load chunk metadata from JSONL format."""
@@ -382,6 +528,42 @@ class CodeIndexer:
                 "Index path must be inside the current working repository to preserve isolation."
             )
 
+    @staticmethod
+    def _emit(callback: ProgressCallback | None, progress: IndexProgress) -> None:
+        """Emit a progress signal when callback is configured."""
+        if callback is not None:
+            callback(progress)
+
+
+def _select_unchanged_rows(
+    rows: list[ChunkMetadata],
+    unchanged_paths: set[str],
+) -> tuple[list[ChunkMetadata], list[int]]:
+    """Select metadata rows and their vector indexes for unchanged files."""
+    selected_rows: list[ChunkMetadata] = []
+    selected_indices: list[int] = []
+    for idx, row in enumerate(rows):
+        if row.file_path in unchanged_paths:
+            selected_rows.append(row)
+            selected_indices.append(idx)
+    return selected_rows, selected_indices
+
+
+def _combine_vectors(unchanged: np.ndarray, changed: np.ndarray) -> np.ndarray:
+    """Combine unchanged and changed vectors, validating dimensional consistency."""
+    if unchanged.size == 0 and changed.size == 0:
+        raise RuntimeError("Unable to build vectors from current repository state.")
+    if unchanged.size == 0:
+        return changed
+    if changed.size == 0:
+        return unchanged
+    if unchanged.shape[1] != changed.shape[1]:
+        raise RuntimeError(
+            "Embedding dimension mismatch detected during incremental update. "
+            "Run 'repomind index' for a full rebuild."
+        )
+    return np.vstack([unchanged, changed]).astype(np.float32)
+
 
 def _read_file_content(path: Path) -> str | None:
     """Read text file content while skipping unreadable files."""
@@ -397,14 +579,3 @@ def _fingerprint_file(path: Path, content: str) -> FileFingerprint:
     stat = path.stat()
     digest = hashlib.sha256(content.encode("utf-8", errors="ignore")).hexdigest()
     return FileFingerprint(sha256=digest, size=stat.st_size, mtime_ns=stat.st_mtime_ns)
-
-
-def _require_faiss() -> Any:
-    """Import faiss lazily to keep CLI diagnostics available without hard dependency."""
-    try:
-        import faiss  # type: ignore
-    except ImportError as exc:
-        raise RuntimeError(
-            "faiss-cpu is not installed. Install dependencies before indexing."
-        ) from exc
-    return faiss

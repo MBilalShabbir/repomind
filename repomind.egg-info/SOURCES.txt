@@ -14,6 +14,7 @@ repomind/core/__init__.py
 repomind/core/config.py
 repomind/core/doctor.py
 repomind/core/embeddings.py
+repomind/core/faiss_store.py
 repomind/core/indexer.py
 repomind/core/llm.py
 repomind/core/retriever.py
@@ -21,3 +22,4 @@ repomind/core/summarizer.py
 repomind/storage/__init__.py
 repomind/utils/__init__.py
 repomind/utils/logging.py
+repomind/utils/output.py

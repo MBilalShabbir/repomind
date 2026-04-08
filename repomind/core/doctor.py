@@ -12,12 +12,13 @@ from repomind.core.config import RepoMindConfig
 class DoctorReport:
     """Diagnostic report describing optional and required capabilities."""
 
+    repomind_dir_exists: bool
+    faiss_index_present: bool
+    metadata_present: bool
+    repo_indexed: bool
     local_embeddings_ok: bool
-    faiss_ok: bool
     openai_key_configured: bool
     anthropic_key_configured: bool
-    openai_sdk_ok: bool
-    anthropic_sdk_ok: bool
 
 
 class DoctorService:
@@ -25,18 +26,21 @@ class DoctorService:
 
     def inspect(self, config: RepoMindConfig) -> DoctorReport:
         """Inspect environment and dependency availability."""
+        repomind_dir_exists = config.data_dir.exists()
+        faiss_index_present = config.index_path.exists()
+        metadata_present = config.metadata_path.exists()
+        repo_indexed = repomind_dir_exists and faiss_index_present and metadata_present
+
         embedding_ok = self._has_module("sentence_transformers")
-        faiss_ok = self._has_module("faiss")
-        openai_sdk_ok = self._has_module("openai")
-        anthropic_sdk_ok = self._has_module("anthropic")
 
         return DoctorReport(
+            repomind_dir_exists=repomind_dir_exists,
+            faiss_index_present=faiss_index_present,
+            metadata_present=metadata_present,
+            repo_indexed=repo_indexed,
             local_embeddings_ok=embedding_ok,
-            faiss_ok=faiss_ok,
             openai_key_configured=bool(config.openai_api_key),
             anthropic_key_configured=bool(config.anthropic_api_key),
-            openai_sdk_ok=openai_sdk_ok,
-            anthropic_sdk_ok=anthropic_sdk_ok,
         )
 
     @staticmethod
