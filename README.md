@@ -2,65 +2,71 @@
 
 ## Stop explaining your codebase to AI
 
-RepoMind indexes your repository once, then gives you context-aware answers from your actual code.
-Fast, local-first, and built for real developer workflows.
+RepoMind creates a **brain per repo**.
+Index once, then ask natural questions and get grounded answers from your actual code.
 
 ## Quick Start
 
-### Install with pip
-
 ```bash
 pip install git+https://github.com/MBilalShabbir/repomind.git
-```
-
-### Or install with pipx
-
-```bash
-pipx install git+https://github.com/MBilalShabbir/repomind.git
-```
-
-## Usage
-
-```bash
 repomind index .
 repomind ask "Where is auth handled?"
 ```
 
 ## What RepoMind Does
 
-- Creates a `.repomind/` index **per repository**
-- Works locally with semantic code search by default
-- Supports optional AI enhancement with:
-  - `ANTHROPIC_API_KEY`
-  - `OPENAI_API_KEY`
+- Builds a local semantic index in `.repomind/` (inside the current repo)
+- Retrieves the most relevant files and snippets for your question
+- Optionally upgrades to AI-generated answers when API keys are set
 
-No key? You still get relevant files and snippets.
+No global state. No cross-repo context leaks.
 
-## How It Works
+## Example Output
 
-1. Scans your repo files
-2. Chunks code into searchable context
-3. Embeds chunks locally
-4. Stores vectors in `.repomind/`
-5. Retrieves top-matching snippets for each question
-6. Optionally generates AI answers when keys are configured
+```text
+📁 Relevant Files
+- app/auth/middleware.py
+- app/auth/service.py
 
-## Works With AI Tools (Claude, ChatGPT)
+📄 Code Snippets
+- app/auth/middleware.py:12-48
+  def validate_token(...)
+  ...
 
-Use RepoMind to retrieve grounded context, then paste into your preferred AI tool.
+🧠 Answer
+Auth is validated in middleware before route handlers.
 
-```bash
-repomind ask "How does auth flow through middleware?" --format prompt
+🤖 Paste into AI
+Context:
+...
+Question:
+Where is auth handled?
 ```
 
-This outputs a structured prompt with context + question, ready to paste into Claude or ChatGPT.
+## Free vs Premium
 
-## Optional: Check Your Setup
+### Free Mode (default)
+- No API key required
+- Semantic retrieval only
+- Returns relevant files + code snippets
+
+### Premium Mode (auto)
+- Uses `ANTHROPIC_API_KEY` first, then `OPENAI_API_KEY`
+- Adds summarized answer + explanation + paste-ready prompt
+
+## Commands
 
 ```bash
 repomind doctor
+repomind index .
+repomind index . --update
+repomind ask "How does auth flow?"
+repomind ask "How does auth flow?" --format prompt
+repomind explain path/to/file.py
 ```
 
-## Contributing
+## Notes
 
-PRs are welcome. Keep changes focused, tested, and documented.
+- `.repomind/` is created per project
+- If no index exists, run: `repomind index .`
+- If no API key exists, RepoMind still works in Free Mode
