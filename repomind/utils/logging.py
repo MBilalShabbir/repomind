@@ -22,8 +22,10 @@ def configure_logging(verbose: bool = False) -> None:
             "httpx",
             "httpcore",
             "huggingface_hub",
+            "huggingface_hub.utils._http",
             "sentence_transformers",
             "transformers",
+            "faiss.loader",
             "urllib3",
         ):
-            logging.getLogger(logger_name).setLevel(logging.WARNING)
+            logging.getLogger(logger_name).setLevel(logging.ERROR)

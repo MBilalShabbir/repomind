@@ -65,13 +65,14 @@ class ConfigLoader:
                 default=DEFAULT_EMBEDDING_MODEL,
             )
         )
-        max_file_size_bytes = int(
-            self._resolve_value(
+        max_file_size_bytes = self._resolve_positive_int(
+            value=self._resolve_value(
                 env_key="REPOMIND_MAX_FILE_SIZE_BYTES",
                 file_config=file_config,
                 file_key="max_file_size_bytes",
                 default=DEFAULT_MAX_FILE_SIZE_BYTES,
-            )
+            ),
+            key="REPOMIND_MAX_FILE_SIZE_BYTES",
         )
 
         llm_preference = self._resolve_value(
@@ -117,3 +118,14 @@ class ConfigLoader:
             return {}
         with path.open("rb") as fp:
             return tomllib.load(fp)
+
+    @staticmethod
+    def _resolve_positive_int(value: Any, key: str) -> int:
+        """Parse a positive integer setting with clear validation errors."""
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"{key} must be a positive integer.") from exc
+        if parsed <= 0:
+            raise RuntimeError(f"{key} must be greater than zero.")
+        return parsed

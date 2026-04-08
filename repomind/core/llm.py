@@ -170,7 +170,7 @@ def _build_file_explain_prompt(file_path: str, content: str) -> str:
     )
 
 
-def _anthropic_text(message) -> str:
+def _anthropic_text(message: object) -> str:
     """Extract text from Anthropic SDK response object."""
     parts: list[str] = []
     for block in getattr(message, "content", []):

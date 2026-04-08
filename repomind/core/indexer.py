@@ -408,6 +408,7 @@ class CodeIndexer:
 
         unchanged_vectors = np.empty((0, 0), dtype=np.float32)
         if unchanged_indices:
+            # Reuse vectors from previous index for unchanged files to avoid re-embedding.
             unchanged_vectors = np.vstack(
                 [old_index.reconstruct(int(index)) for index in unchanged_indices]
             ).astype(np.float32)

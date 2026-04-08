@@ -33,9 +33,18 @@ def _build_embedder(config: RepoMindConfig) -> SentenceTransformerEmbedder:
     return SentenceTransformerEmbedder(model_name=config.embedding_model)
 
 
+def _load_config() -> RepoMindConfig:
+    """Load runtime config and fail gracefully on invalid settings."""
+    try:
+        return ConfigLoader(project_root=Path.cwd()).load()
+    except Exception as exc:  # noqa: BLE001
+        output.error(f"Configuration error: {exc}")
+        raise typer.Exit(code=1) from exc
+
+
 def _load_runtime_context() -> tuple[RepoMindConfig, SentenceTransformerEmbedder]:
     """Build shared runtime dependencies for CLI commands."""
-    config = ConfigLoader(project_root=Path.cwd()).load()
+    config = _load_config()
     embedder = _build_embedder(config)
     return config, embedder
 
@@ -188,10 +197,13 @@ def ask(
     config, embedder = _load_runtime_context()
     _ensure_repo_index_exists(config)
     retriever = CodeRetriever(config=config, embedder=embedder)
-    summarizer = SummaryBuilder()
 
     try:
         results = retriever.retrieve(question=question, top_k=top_k)
+    except EmbeddingError as exc:
+        logger.error("Embedding error: %s", exc)
+        output.error(str(exc))
+        raise typer.Exit(code=1) from exc
     except FileNotFoundError as exc:
         output.error(str(exc))
         raise typer.Exit(code=1) from exc
@@ -209,6 +221,7 @@ def ask(
         typer.echo(_build_prompt_only_output(question=question, results=results))
         return
 
+    summarizer = SummaryBuilder()
     llm_client = LLMRouter(config).resolve()
     ai_answer: str | None = None
     provider: str | None = None
@@ -314,7 +327,7 @@ def explain(
 @app.command()
 def doctor() -> None:
     """Run environment diagnostics and suggest setup improvements."""
-    config = ConfigLoader(project_root=Path.cwd()).load()
+    config = _load_config()
     report = DoctorService().inspect(config)
 
     output.section("RepoMind Doctor:")
@@ -333,6 +346,10 @@ def doctor() -> None:
         output.info("✅ FAISS index file found")
     else:
         output.info("⚠️ FAISS index file not found")
+    if report.metadata_present:
+        output.info("✅ Metadata file found")
+    else:
+        output.info("⚠️ Metadata file not found")
 
     if report.local_embeddings_ok:
         output.info("✅ Local embeddings working")

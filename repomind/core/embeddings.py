@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 import numpy as np
 
@@ -48,7 +48,7 @@ class SentenceTransformerEmbedder(Embedder):
         self._batch_size = batch_size
         self._model = None
 
-    def _get_model(self):
+    def _get_model(self) -> Any:
         if self._model is None:
             try:
                 from sentence_transformers import SentenceTransformer
@@ -56,8 +56,14 @@ class SentenceTransformerEmbedder(Embedder):
                 raise EmbeddingError(
                     "sentence-transformers is not installed. Install requirements first."
                 ) from exc
-            logger.info("Loading embedding model: %s", self._model_name)
-            self._model = SentenceTransformer(self._model_name)
+            # Model loading is expensive and should not spam normal CLI output.
+            logger.debug("Loading embedding model: %s", self._model_name)
+            try:
+                self._model = SentenceTransformer(self._model_name)
+            except Exception as exc:  # noqa: BLE001
+                raise EmbeddingError(
+                    "Unable to load embedding model. Check internet/model cache and try again."
+                ) from exc
         return self._model
 
     def embed_documents(self, texts: Sequence[str]) -> EmbeddingResult:
@@ -67,17 +73,22 @@ class SentenceTransformerEmbedder(Embedder):
 
         model = self._get_model()
         batches: list[np.ndarray] = []
-        for batch in self._iter_batches(texts, self._batch_size):
-            vectors = model.encode(
-                list(batch),
-                normalize_embeddings=True,
-                show_progress_bar=False,
-                convert_to_numpy=True,
-                batch_size=self._batch_size,
-            )
-            if not isinstance(vectors, np.ndarray):
-                vectors = np.asarray(vectors)
-            batches.append(vectors.astype(np.float32))
+        try:
+            for batch in self._iter_batches(texts, self._batch_size):
+                vectors = model.encode(
+                    list(batch),
+                    normalize_embeddings=True,
+                    show_progress_bar=False,
+                    convert_to_numpy=True,
+                    batch_size=self._batch_size,
+                )
+                if not isinstance(vectors, np.ndarray):
+                    vectors = np.asarray(vectors)
+                batches.append(vectors.astype(np.float32))
+        except Exception as exc:  # noqa: BLE001
+            raise EmbeddingError(
+                "Embedding generation failed. Verify model availability and input files."
+            ) from exc
 
         merged = np.vstack(batches) if len(batches) > 1 else batches[0]
         return EmbeddingResult(vectors=merged)
@@ -87,13 +98,18 @@ class SentenceTransformerEmbedder(Embedder):
         if not text.strip():
             raise EmbeddingError("Query text cannot be empty.")
         model = self._get_model()
-        vector = model.encode(
-            [text],
-            normalize_embeddings=True,
-            show_progress_bar=False,
-            convert_to_numpy=True,
-            batch_size=1,
-        )[0]
+        try:
+            vector = model.encode(
+                [text],
+                normalize_embeddings=True,
+                show_progress_bar=False,
+                convert_to_numpy=True,
+                batch_size=1,
+            )[0]
+        except Exception as exc:  # noqa: BLE001
+            raise EmbeddingError(
+                "Query embedding failed. Verify embedding model setup."
+            ) from exc
         return np.asarray(vector, dtype=np.float32)
 
     @staticmethod
