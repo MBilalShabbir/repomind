@@ -56,6 +56,7 @@ class SentenceTransformerEmbedder(Embedder):
                 raise EmbeddingError(
                     "sentence-transformers is not installed. Install requirements first."
                 ) from exc
+            self._suppress_third_party_model_logs()
             # Model loading is expensive and should not spam normal CLI output.
             logger.debug("Loading embedding model: %s", self._model_name)
             try:
@@ -117,3 +118,14 @@ class SentenceTransformerEmbedder(Embedder):
         """Yield fixed-size batches from an input sequence."""
         for index in range(0, len(texts), size):
             yield texts[index : index + size]
+
+    @staticmethod
+    def _suppress_third_party_model_logs() -> None:
+        """Reduce noisy model initialization output from upstream libraries."""
+        try:
+            from transformers import logging as transformers_logging
+
+            transformers_logging.set_verbosity_error()
+            transformers_logging.disable_progress_bar()
+        except Exception:  # noqa: BLE001
+            pass

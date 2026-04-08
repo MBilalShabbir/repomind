@@ -105,6 +105,8 @@ class FileScanner:
                 continue
             if any(part in IGNORED_DIRECTORIES for part in path.parts):
                 continue
+            if any(part.endswith(".egg-info") for part in path.parts):
+                continue
             if path.name in IGNORED_FILE_NAMES:
                 continue
             if path.name.endswith((".min.js", ".min.css")):
