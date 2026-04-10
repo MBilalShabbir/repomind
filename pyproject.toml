@@ -1,16 +1,42 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "repomind-cli"
-version = "0.1.0"
-description = "Stop explaining your codebase to AI. RepoMind builds a brain for your repository. Index your repository and ask context-aware questions using embeddings and optional LLMs."
+version = "1.0.0"
+description = "Give Claude Code a brain for your entire codebase. Index once, ask anything."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-  { name = "RepoMind Maintainers" }
+  { name = "Bilal", email = "mbilalshabbirr@gmail.com" }
+]
+keywords = [
+  "claude-code",
+  "mcp",
+  "codebase",
+  "semantic-search",
+  "embeddings",
+  "faiss",
+  "llm",
+  "ai",
+  "developer-tools",
+  "code-intelligence",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Utilities",
 ]
 dependencies = [
   "typer>=0.12.3,<1.0.0",
@@ -19,7 +45,23 @@ dependencies = [
   "sentence-transformers>=3.0.1",
   "openai>=1.52.0",
   "anthropic>=0.39.0",
+  "numpy>=1.26.4",
 ]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-cov>=5.0.0",
+]
+plugin = [
+  "mcp>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/MBilalShabbir/repomind"
+Repository = "https://github.com/MBilalShabbir/repomind"
+"Bug Tracker" = "https://github.com/MBilalShabbir/repomind/issues"
+Changelog = "https://github.com/MBilalShabbir/repomind/releases"
 
 [project.scripts]
 repomind = "repomind.cli.main:app"

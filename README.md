@@ -1,73 +1,274 @@
-# RepoMind
+<div align="center">
 
-## Stop explaining your codebase to AI
+# 🧠 RepoMind
 
-RepoMind creates a **brain per repo**.
-Index once, then ask natural questions and get grounded answers from your actual code.
+### Give Claude Code a brain for your entire codebase.
 
-## Quick Start
+**Index once. Ask anything. Never explain your code to AI again.**
+
+[![PyPI version](https://img.shields.io/pypi/v/repomind-cli?color=blue&label=pip%20install%20repomind-cli)](https://pypi.org/project/repomind-cli/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-Plugin%20Ready-blueviolet)](plugin/)
+[![Stars](https://img.shields.io/github/stars/MBilalShabbir/repomind?style=social)](https://github.com/MBilalShabbir/repomind/stargazers)
+
+</div>
+
+---
+
+## The Problem
+
+You open Claude Code, paste half your codebase into the chat, and **still** get hallucinated function names.
+
+You're not giving AI a codebase — you're giving it a dump. AI needs **understanding**, not just text.
+
+## The Solution
+
+RepoMind builds a **semantic brain** for your repo. Every file, chunked and embedded locally. Ask it anything — it finds exactly what's relevant and feeds that to the AI.
+
+```
+repomind index .
+repomind ask "How does authentication work?"
+```
+
+That's it.
+
+---
+
+## ⚡ Quickstart
 
 ```bash
-pip install git+https://github.com/MBilalShabbir/repomind.git
+pip install repomind-cli
+
+cd your-project/
 repomind index .
-repomind ask "Where is auth handled?"
+repomind ask "Where is the payment logic?"
 ```
 
-## What RepoMind Does
+**No API key needed.** Works fully offline. Add `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` to unlock AI-generated answers.
 
-- Builds a local semantic index in `.repomind/` (inside the current repo)
-- Retrieves the most relevant files and snippets for your question
-- Optionally upgrades to AI-generated answers when API keys are set
+---
 
-No global state. No cross-repo context leaks.
+## 🔌 Claude Code Plugin
 
-## Example Output
+RepoMind ships with a **first-class Claude Code MCP plugin** — Claude automatically gets your codebase context before answering any question.
 
-```text
-📁 Relevant Files
-- app/auth/middleware.py
-- app/auth/service.py
+```bash
+# Install the plugin (once)
+bash plugin/install.sh
 
-📄 Code Snippets
-- app/auth/middleware.py:12-48
-  def validate_token(...)
-  ...
-
-🧠 Answer
-Auth is validated in middleware before route handlers.
-
-🤖 Paste into AI
-Context:
-...
-Question:
-Where is auth handled?
+# Claude now has 5 new tools:
+# repomind_ask · repomind_explain · repomind_overview · repomind_index · repomind_doctor
 ```
+
+Claude Code will automatically call these tools when you ask about your code — no manual prompting needed.
+
+### Slash Commands
+
+Drop `.claude/commands/` into any project and get instant slash commands:
+
+| Command | What it does |
+|---|---|
+| `/repomind-ask <question>` | Semantic search + grounded answer |
+| `/repomind-explain <file>` | Purpose, functions, flow of any file |
+| `/repomind-overview` | Full project map with module descriptions |
+
+---
+
+## What You Get
+
+```
+$ repomind ask "How does the auth flow work?"
+
+────────── 📁 Relevant Files ──────────
+- src/auth/middleware.py
+- src/auth/jwt.py
+- src/users/service.py
+
+────────── 📝 Memory ──────────
+- Auth uses JWT stored in HttpOnly cookies
+- Tokens expire after 24h
+
+────────── 📄 Code Snippets ──────────
+src/auth/middleware.py:12-48
+  def validate_token(request):
+    ...
+
+────────── 🧠 Answer ──────────
+Auth flow: request → JWT middleware → token validation →
+user lookup → route handler. Tokens are stored in
+HttpOnly cookies and validated on every request.
+```
+
+---
+
+## All Commands
+
+| Command | Description |
+|---|---|
+| `repomind index .` | Build semantic index for current repo |
+| `repomind index . --update` | Re-index only changed files (fast) |
+| `repomind ask "<question>"` | Ask anything about the codebase |
+| `repomind ask "<question>" --format prompt` | Get a paste-ready AI prompt |
+| `repomind explain <file>` | Deep-dive any file |
+| `repomind overview` | Project structure + module map |
+| `repomind remember "<note>"` | Save a note to codebase memory |
+| `repomind remember` | List all saved notes |
+| `repomind forget <id>` | Remove a note |
+| `repomind doctor` | Check setup and environment |
+
+---
+
+## 🧠 Memory
+
+RepoMind has persistent memory per repo. Notes you save are automatically included in every future `ask` query — both in the output and in the LLM prompt.
+
+```bash
+repomind remember "Auth uses JWT stored in HttpOnly cookies"
+repomind remember "Postgres 15 — schema lives in db/migrations/"
+repomind remember "Never call UserService directly, go through the API layer"
+
+repomind ask "How do I add a new endpoint?"
+# → Answer is grounded in your code + your notes
+```
+
+Notes are stored in `.repomind/memory.json` — plain JSON, easy to commit or gitignore.
+
+---
 
 ## Free vs Premium
 
-### Free Mode (default)
-- No API key required
-- Semantic retrieval only
-- Returns relevant files + code snippets
+| Feature | Free (no key) | Premium (API key) |
+|---|---|---|
+| Semantic file retrieval | ✅ | ✅ |
+| Code snippets with line numbers | ✅ | ✅ |
+| Memory injection | ✅ | ✅ |
+| Project overview | ✅ | ✅ |
+| AI-generated answers | ❌ | ✅ |
+| File explanations (AI) | ❌ | ✅ |
+| Module summaries (AI) | ❌ | ✅ |
 
-### Premium Mode (auto)
-- Uses `ANTHROPIC_API_KEY` first, then `OPENAI_API_KEY`
-- Adds summarized answer + explanation + paste-ready prompt
+**Free mode is fully useful.** Premium mode adds natural language answers on top.
 
-## Commands
-
+Set either key to activate:
 ```bash
-repomind doctor
-repomind overview .
-repomind index .
-repomind index . --update
-repomind ask "How does auth flow?"
-repomind ask "How does auth flow?" --format prompt
-repomind explain path/to/file.py
+export ANTHROPIC_API_KEY=sk-ant-...   # preferred
+export OPENAI_API_KEY=sk-...          # also works
 ```
 
-## Notes
+---
 
-- `.repomind/` is created per project
-- If no index exists, run: `repomind index .`
-- If no API key exists, RepoMind still works in Free Mode
+## How It Works
+
+```
+repomind index .
+
+  1. FileScanner   — walks your repo, skips binaries/noise
+  2. CodeChunker   — splits files into overlapping chunks
+  3. Embedder      — encodes chunks with all-MiniLM-L6-v2 (local)
+  4. FAISS         — stores vectors in .repomind/index.faiss
+
+repomind ask "..."
+
+  1. Embed question  → same local model, no network call
+  2. FAISS search    → top-k most relevant chunks
+  3. LLM (optional)  → grounded answer with citations
+```
+
+Everything lives in `.repomind/` inside your project. **No global state. No cross-repo leakage.**
+
+---
+
+## Configuration
+
+Optional config file at `.repomind/config.toml`:
+
+```toml
+# Use a different embedding model
+embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+
+# Max file size to index (default: 1MB)
+max_file_size_bytes = 1048576
+```
+
+All settings can also be set via environment variables:
+
+```bash
+REPOMIND_EMBEDDING_MODEL=...
+REPOMIND_MAX_FILE_SIZE_BYTES=...
+ANTHROPIC_API_KEY=...
+OPENAI_API_KEY=...
+```
+
+---
+
+## Installation
+
+```bash
+# Stable release
+pip install repomind-cli
+
+# Latest from source
+pip install git+https://github.com/MBilalShabbir/repomind.git
+```
+
+**Requirements:** Python 3.10+
+
+---
+
+## Claude Code Plugin — Full Setup
+
+For teams that use Claude Code as their primary AI IDE:
+
+```bash
+# 1. Clone the repo (or copy the plugin/ folder)
+git clone https://github.com/MBilalShabbir/repomind.git
+
+# 2. Install the MCP plugin
+bash repomind/plugin/install.sh
+
+# 3. Index your project
+cd your-project/
+repomind index .
+
+# 4. Open Claude Code — it now has your full codebase as context
+```
+
+Claude Code gains 5 MCP tools: `repomind_ask`, `repomind_explain`, `repomind_overview`, `repomind_index`, `repomind_doctor`.
+
+It also gains 3 slash commands if you copy `.claude/commands/` into your project.
+
+---
+
+## Why Star This?
+
+- 🔒 **100% local embeddings** — your code never leaves your machine
+- 🧠 **Persistent memory** — notes survive across sessions
+- ⚡ **Claude Code MCP plugin** — first-class integration, not an afterthought
+- 🆓 **Free mode is real** — semantic search works without any API key
+- 🔄 **Incremental indexing** — only re-embeds changed files
+- 🗂️ **Per-repo isolation** — no cross-project contamination
+
+---
+
+## Contributing
+
+Stars, issues, and PRs are welcome.
+
+```bash
+git clone https://github.com/MBilalShabbir/repomind.git
+cd repomind
+pip install -e .
+```
+
+If RepoMind saved you from pasting your entire codebase into a chat window, **leave a star** ⭐ — it helps more developers find this.
+
+---
+
+<div align="center">
+
+Built by [Bilal](https://github.com/MBilalShabbir) · MIT License
+
+**[⭐ Star on GitHub](https://github.com/MBilalShabbir/repomind)** · **[📦 PyPI](https://pypi.org/project/repomind-cli/)** · **[🐛 Issues](https://github.com/MBilalShabbir/repomind/issues)**
+
+</div>

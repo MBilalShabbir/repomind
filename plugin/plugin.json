@@ -2,7 +2,7 @@
   "name": "repomind",
   "version": "0.1.0",
   "description": "Gives Claude Code grounded codebase context via the RepoMind CLI.",
-  "author": "RepoMind Maintainers",
+  "author": "Bilal <mbilalshabbirr@gmail.com>",
   "license": "MIT",
   "type": "mcp",
   "transport": "stdio",
