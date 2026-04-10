@@ -2,7 +2,7 @@
   "name": "repomind",
   "version": "1.0.0",
   "description": "Semantic codebase search and Q&A for Claude Code. Index once, ask anything — no more pasting files into chat.",
-  "author": "Bilal <mbilalshabbirr@gmail.com>",
+  "author": { "name": "Bilal", "email": "mbilalshabbirr@gmail.com" },
   "license": "MIT",
   "type": "mcp",
   "transport": "stdio",
