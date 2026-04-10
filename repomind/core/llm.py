@@ -25,8 +25,13 @@ class LLMClient:
 
     provider: str
 
-    def answer_question(self, question: str, contexts: Iterable[ChunkMetadata]) -> LLMResponse:
-        """Generate an answer from context chunks."""
+    def answer_question(
+        self,
+        question: str,
+        contexts: Iterable[ChunkMetadata],
+        memory_notes: list[str] | None = None,
+    ) -> LLMResponse:
+        """Generate an answer from context chunks, optionally enriched by memory notes."""
         raise NotImplementedError
 
     def explain_file(self, file_path: str, content: str) -> LLMResponse:
@@ -69,9 +74,14 @@ class OpenAIClient(LLMClient):
         self._client = OpenAI(api_key=api_key)
         self._model = model
 
-    def answer_question(self, question: str, contexts: Iterable[ChunkMetadata]) -> LLMResponse:
+    def answer_question(
+        self,
+        question: str,
+        contexts: Iterable[ChunkMetadata],
+        memory_notes: list[str] | None = None,
+    ) -> LLMResponse:
         """Generate a contextual answer using OpenAI."""
-        prompt = _build_qa_prompt(question, contexts)
+        prompt = _build_qa_prompt(question, contexts, memory_notes=memory_notes)
         response = self._client.responses.create(
             model=self._model,
             input=prompt,
@@ -120,9 +130,14 @@ class AnthropicClient(LLMClient):
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = model
 
-    def answer_question(self, question: str, contexts: Iterable[ChunkMetadata]) -> LLMResponse:
+    def answer_question(
+        self,
+        question: str,
+        contexts: Iterable[ChunkMetadata],
+        memory_notes: list[str] | None = None,
+    ) -> LLMResponse:
         """Generate a contextual answer using Anthropic."""
-        prompt = _build_qa_prompt(question, contexts)
+        prompt = _build_qa_prompt(question, contexts, memory_notes=memory_notes)
         msg = self._client.messages.create(
             model=self._model,
             max_tokens=800,
@@ -195,10 +210,19 @@ class LLMRouter:
             return None
 
 
-def _build_qa_prompt(question: str, contexts: Iterable[ChunkMetadata]) -> str:
-    """Build a grounded QA prompt."""
-    parts = [
-        "You are RepoMind, assisting with codebase analysis.",
+def _build_qa_prompt(
+    question: str,
+    contexts: Iterable[ChunkMetadata],
+    memory_notes: list[str] | None = None,
+) -> str:
+    """Build a grounded QA prompt, optionally prefixed with user memory notes."""
+    parts = ["You are RepoMind, assisting with codebase analysis."]
+
+    if memory_notes:
+        notes_block = "\n".join(f"- {note}" for note in memory_notes)
+        parts.append(f"Project notes (user-authored context about this codebase):\n{notes_block}")
+
+    parts += [
         "Use only the provided snippets when possible, and cite file paths.",
         f"Question: {question}",
         "Context snippets:",

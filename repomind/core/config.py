@@ -26,6 +26,7 @@ class RepoMindConfig:
     data_dir: Path
     index_path: Path
     metadata_path: Path
+    memory_path: Path
     embedding_model: str
     max_file_size_bytes: int
     openai_api_key: str | None
@@ -79,6 +80,7 @@ class ConfigLoader:
             data_dir=data_dir,
             index_path=data_dir / "index.faiss",
             metadata_path=data_dir / "metadata.jsonl",
+            memory_path=data_dir / "memory.json",
             embedding_model=embedding_model,
             max_file_size_bytes=max_file_size_bytes,
             openai_api_key=os.getenv("OPENAI_API_KEY"),

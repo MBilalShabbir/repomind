@@ -13,6 +13,7 @@ from repomind.core.doctor import DoctorService
 from repomind.core.embeddings import EmbeddingError, SentenceTransformerEmbedder
 from repomind.core.indexer import IGNORED_DIRECTORIES, CodeIndexer, IndexProgress
 from repomind.core.llm import LLMRouter, parse_codebase_summaries
+from repomind.core.memory import MemoryStore
 from repomind.core.overview import OverviewAnalyzer
 from repomind.core.retriever import NO_INDEX_MESSAGE, CodeRetriever, RetrievalResult
 from repomind.core.summarizer import FileSummarizer, FolderSummarizer, SummaryBuilder
@@ -111,7 +112,11 @@ def _truncate_text(text: str, max_chars: int = 900) -> str:
     return stripped[:max_chars].rstrip() + "\n... [truncated]"
 
 
-def _build_prompt_only_output(question: str, results: list[RetrievalResult]) -> str:
+def _build_prompt_only_output(
+    question: str,
+    results: list[RetrievalResult],
+    memory_notes: list[str] | None = None,
+) -> str:
     """Build a prompt-only payload for copy-pasting into AI tools."""
     context_blocks: list[str] = []
     for idx, item in enumerate(results, start=1):
@@ -123,7 +128,14 @@ def _build_prompt_only_output(question: str, results: list[RetrievalResult]) -> 
             )
         )
     context_text = "\n\n".join(context_blocks)
+
+    notes_block = ""
+    if memory_notes:
+        notes_lines = "\n".join(f"- {n}" for n in memory_notes)
+        notes_block = f"Project notes:\n{notes_lines}\n\n"
+
     return (
+        f"{notes_block}"
         "Context:\n"
         f"{context_text}\n\n"
         "Question:\n"
@@ -233,8 +245,17 @@ def ask(
         output.error(f"Retrieval failed: {exc}")
         raise typer.Exit(code=1) from exc
 
+    # Load memory notes — fast JSON read, never raises.
+    memory_notes = MemoryStore(config.memory_path).texts()
+
     if normalized_format == "prompt":
-        typer.echo(_build_prompt_only_output(question=question, results=results))
+        typer.echo(
+            _build_prompt_only_output(
+                question=question,
+                results=results,
+                memory_notes=memory_notes or None,
+            )
+        )
         return
 
     summarizer = SummaryBuilder()
@@ -248,6 +269,7 @@ def ask(
             llm_response = llm_client.answer_question(
                 question=question,
                 contexts=[item.metadata for item in results],
+                memory_notes=memory_notes or None,
             )
             ai_answer = llm_response.text
             provider = llm_response.provider
@@ -268,6 +290,11 @@ def ask(
     if not summary.relevant_files:
         output.warning("No relevant files found in current index.")
         output.info("Try rephrasing your question or increase `--top-k`.")
+
+    if memory_notes:
+        output.section("📝 Memory")
+        for note in memory_notes:
+            output.bullet(note)
 
     if not summary.llm_provider and ai_unavailable:
         _warn_ai_unavailable()
@@ -587,6 +614,65 @@ def _overview_from_filesystem(root: Path) -> None:
     output.info(
         "Index your repository with `repomind index .` for a full AI-powered summary."
     )
+
+
+@app.command()
+def remember(
+    note: Annotated[
+        str | None,
+        typer.Argument(help="Note to store. Omit to list all saved notes."),
+    ] = None,
+) -> None:
+    """Save a note about this repository, or list existing notes.
+
+    Examples:
+        repomind remember "Auth uses JWT stored in HttpOnly cookies"
+        repomind remember "Database is PostgreSQL 15, schema in db/migrations/"
+        repomind remember
+    """
+    config = _load_config()
+    store = MemoryStore(config.memory_path)
+
+    if note is None:
+        # List mode
+        notes = store.list()
+        output.section("📝 Memory")
+        if not notes:
+            output.info("No notes yet. Add one with: repomind remember \"<note>\"")
+            return
+        for n in notes:
+            output.info(f"  [{n.id}] {n.note}")
+            output.info(f"       {n.created_at}")
+        output.info(f"\n{len(notes)} note(s). Remove with: repomind forget <id>")
+        return
+
+    # Add mode
+    entry = store.add(note)
+    output.section("📝 Memory")
+    output.success(f"Saved [{entry.id}]: {entry.note}")
+    output.info("This note will be included in future `repomind ask` responses.")
+
+
+@app.command()
+def forget(
+    note_id: Annotated[
+        int,
+        typer.Argument(help="ID of the note to remove (shown by `repomind remember`)."),
+    ],
+) -> None:
+    """Remove a saved note by its ID.
+
+    Example:
+        repomind forget 2
+    """
+    config = _load_config()
+    store = MemoryStore(config.memory_path)
+
+    if store.forget(note_id):
+        output.success(f"Note [{note_id}] removed.")
+    else:
+        output.error(f"No note with ID {note_id}. Run `repomind remember` to see existing notes.")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

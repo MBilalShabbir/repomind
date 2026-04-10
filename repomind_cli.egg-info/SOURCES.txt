@@ -11,6 +11,8 @@ repomind/core/embeddings.py
 repomind/core/faiss_store.py
 repomind/core/indexer.py
 repomind/core/llm.py
+repomind/core/memory.py
+repomind/core/overview.py
 repomind/core/retriever.py
 repomind/core/summarizer.py
 repomind/storage/__init__.py
