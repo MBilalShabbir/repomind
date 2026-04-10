@@ -33,13 +33,24 @@ class LLMClient:
         """Generate a structured explanation for a file."""
         raise NotImplementedError
 
-    def overview_project(
+    def summarize_codebase(
         self,
-        key_modules: list[str],
-        important_files: list[str],
+        file_infos: list[tuple[str, list[str]]],
+        folder_infos: list[tuple[str, int]],
         file_sample: list[str],
     ) -> LLMResponse:
-        """Generate a high-level project summary from structural hints."""
+        """Batch-summarize files, folders, and the whole project in one call.
+
+        Args:
+            file_infos: [(file_path, [key_symbol, ...]), ...] for important files.
+            folder_infos: [(folder_path, file_count), ...] for key modules.
+            file_sample: All indexed file paths for project-level context.
+
+        Returns:
+            LLMResponse whose text is in the parseable format produced by
+            `_build_codebase_summary_prompt`.  Use `parse_codebase_summaries`
+            to decode it into a dict.
+        """
         raise NotImplementedError
 
 
@@ -79,14 +90,14 @@ class OpenAIClient(LLMClient):
         )
         return LLMResponse(provider=self.provider, text=response.output_text.strip())
 
-    def overview_project(
+    def summarize_codebase(
         self,
-        key_modules: list[str],
-        important_files: list[str],
+        file_infos: list[tuple[str, list[str]]],
+        folder_infos: list[tuple[str, int]],
         file_sample: list[str],
     ) -> LLMResponse:
-        """Generate a high-level project summary using OpenAI."""
-        prompt = _build_overview_prompt(key_modules, important_files, file_sample)
+        """Batch-summarize files, folders, and project using OpenAI."""
+        prompt = _build_codebase_summary_prompt(file_infos, folder_infos, file_sample)
         response = self._client.responses.create(
             model=self._model,
             input=prompt,
@@ -132,17 +143,17 @@ class AnthropicClient(LLMClient):
         )
         return LLMResponse(provider=self.provider, text=_anthropic_text(msg))
 
-    def overview_project(
+    def summarize_codebase(
         self,
-        key_modules: list[str],
-        important_files: list[str],
+        file_infos: list[tuple[str, list[str]]],
+        folder_infos: list[tuple[str, int]],
         file_sample: list[str],
     ) -> LLMResponse:
-        """Generate a high-level project summary using Anthropic."""
-        prompt = _build_overview_prompt(key_modules, important_files, file_sample)
+        """Batch-summarize files, folders, and project using Anthropic."""
+        prompt = _build_codebase_summary_prompt(file_infos, folder_infos, file_sample)
         msg = self._client.messages.create(
             model=self._model,
-            max_tokens=400,
+            max_tokens=600,
             temperature=0.2,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -210,23 +221,72 @@ def _build_file_explain_prompt(file_path: str, content: str) -> str:
     )
 
 
-def _build_overview_prompt(
-    key_modules: list[str],
-    important_files: list[str],
+def _build_codebase_summary_prompt(
+    file_infos: list[tuple[str, list[str]]],
+    folder_infos: list[tuple[str, int]],
     file_sample: list[str],
 ) -> str:
-    """Build a prompt for generating a high-level project summary."""
-    modules_text = "\n".join(f"- {m}" for m in key_modules) or "- (none detected)"
-    files_text = "\n".join(f"- {f}" for f in important_files) or "- (none detected)"
+    """Build a structured batch-summary prompt.
+
+    The response must follow this exact line format so it can be parsed by
+    `parse_codebase_summaries`:
+
+        FILE <path>: <one-line description, ≤12 words>
+        FOLDER <path>: <one-line description, ≤10 words>
+        PROJECT: <1-2 sentence project summary>
+    """
+    file_lines = "\n".join(
+        f"FILE {path} | symbols: {', '.join(syms) or 'none'}"
+        for path, syms in file_infos
+    )
+    folder_lines = "\n".join(
+        f"FOLDER {folder} | {count} file(s)"
+        for folder, count in folder_infos
+    )
     sample_text = "\n".join(file_sample[:60])
     return (
-        "You are RepoMind. Based on the project structure below, write a concise "
-        "2-4 sentence summary describing what this project does and its main purpose. "
-        "Do not use markdown headers or bullet points — plain prose only.\n\n"
-        f"Key modules:\n{modules_text}\n\n"
-        f"Important files:\n{files_text}\n\n"
-        f"All indexed files (sample):\n{sample_text}"
+        "You are RepoMind. Summarize each codebase component in plain English.\n"
+        "Respond ONLY using these exact line prefixes — one entry per line:\n"
+        "  FILE <path>: <description up to 12 words>\n"
+        "  FOLDER <path>: <description up to 10 words>\n"
+        "  PROJECT: <1-2 sentence summary>\n\n"
+        "Files to summarize:\n"
+        f"{file_lines or '(none)'}\n\n"
+        "Folders to summarize:\n"
+        f"{folder_lines or '(none)'}\n\n"
+        "All indexed files (context):\n"
+        f"{sample_text}"
     )
+
+
+def parse_codebase_summaries(text: str) -> dict[str, str]:
+    """Decode the structured LLM response from `_build_codebase_summary_prompt`.
+
+    Returns a dict with keys:
+      ``"file:<path>"``   — per-file one-liners
+      ``"folder:<path>"`` — per-folder one-liners
+      ``"project"``       — overall project summary
+    """
+    result: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or ":" not in line:
+            continue
+        if line.startswith("FILE "):
+            rest = line[5:]
+            path, _, desc = rest.partition(":")
+            if desc.strip():
+                result[f"file:{path.strip()}"] = desc.strip()
+        elif line.startswith("FOLDER "):
+            rest = line[7:]
+            path, _, desc = rest.partition(":")
+            if desc.strip():
+                result[f"folder:{path.strip()}"] = desc.strip()
+        elif line.startswith("PROJECT:"):
+            desc = line[8:].strip()
+            if desc:
+                result["project"] = desc
+    return result
 
 
 def _anthropic_text(message: object) -> str:

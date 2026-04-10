@@ -88,9 +88,19 @@ class OverviewAnalyzer:
 
     def __init__(self, metadata_path: Path) -> None:
         self._metadata_path = metadata_path
+        self._rows: list[ChunkMetadata] | None = None  # lazy-cached
+
+    def chunks_by_file(self) -> dict[str, list[ChunkMetadata]]:
+        """Return metadata rows grouped by file path (shares the cached load)."""
+        from collections import defaultdict
+
+        grouped: dict[str, list[ChunkMetadata]] = defaultdict(list)
+        for row in self._get_rows():
+            grouped[row.file_path].append(row)
+        return dict(grouped)
 
     def analyze(self) -> OverviewResult:
-        rows = self._load_metadata()
+        rows = self._get_rows()
 
         file_paths = [row.file_path for row in rows]
         unique_files = sorted(set(file_paths))
@@ -208,6 +218,11 @@ class OverviewAnalyzer:
             parts.append(f"Likely entry points: {', '.join(entry_names)}.")
 
         return " ".join(parts)
+
+    def _get_rows(self) -> list[ChunkMetadata]:
+        if self._rows is None:
+            self._rows = self._load_metadata()
+        return self._rows
 
     def _load_metadata(self) -> list[ChunkMetadata]:
         rows: list[ChunkMetadata] = []

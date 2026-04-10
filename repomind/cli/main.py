@@ -12,10 +12,10 @@ from repomind.core.config import ConfigLoader, RepoMindConfig
 from repomind.core.doctor import DoctorService
 from repomind.core.embeddings import EmbeddingError, SentenceTransformerEmbedder
 from repomind.core.indexer import IGNORED_DIRECTORIES, CodeIndexer, IndexProgress
-from repomind.core.llm import LLMRouter
+from repomind.core.llm import LLMRouter, parse_codebase_summaries
 from repomind.core.overview import OverviewAnalyzer
 from repomind.core.retriever import NO_INDEX_MESSAGE, CodeRetriever, RetrievalResult
-from repomind.core.summarizer import SummaryBuilder
+from repomind.core.summarizer import FileSummarizer, FolderSummarizer, SummaryBuilder
 from repomind.utils.logging import configure_logging
 from repomind.utils.output import CliOutput
 
@@ -439,9 +439,11 @@ def overview(
 
 
 def _overview_from_index(config: RepoMindConfig, root: Path) -> None:
-    """Render overview using indexed metadata and optional LLM summary."""
+    """Render overview using indexed metadata and optional LLM summarization."""
     try:
-        result = OverviewAnalyzer(config.metadata_path).analyze()
+        analyzer = OverviewAnalyzer(config.metadata_path)
+        result = analyzer.analyze()
+        chunks_by_file = analyzer.chunks_by_file()
     except Exception as exc:  # noqa: BLE001
         logger.error("Overview analysis failed: %s", exc)
         output.error(f"Failed to analyze index: {exc}")
@@ -450,56 +452,100 @@ def _overview_from_index(config: RepoMindConfig, root: Path) -> None:
     output.kv("Indexed files", str(result.total_files))
     output.kv("Indexed chunks", str(result.total_chunks))
 
+    # -----------------------------------------------------------------------
+    # Heuristic file + folder summaries (no I/O, instant)
+    # -----------------------------------------------------------------------
+    file_summarizer = FileSummarizer()
+    folder_summarizer = FolderSummarizer()
+
+    # Summarize every important file and every file inside key modules.
+    files_to_summarize: list[str] = list(
+        dict.fromkeys(result.important_files + [
+            fp
+            for mod in result.key_modules
+            for fp in chunks_by_file
+            if fp.startswith(mod.rstrip("/"))
+        ])
+    )[:12]
+
+    file_summaries = {
+        fp: file_summarizer.summarize_heuristic(fp, chunks_by_file.get(fp, []))
+        for fp in files_to_summarize
+    }
+
+    folder_summaries = {}
+    for mod in result.key_modules:
+        mod_prefix = mod.rstrip("/")
+        mod_files = [fs for fp, fs in file_summaries.items() if fp.startswith(mod_prefix)]
+        if mod_files:
+            folder_summaries[mod] = folder_summarizer.summarize(mod, mod_files)
+
+    # -----------------------------------------------------------------------
+    # Optional LLM batch enrichment — one call, structured response
+    # -----------------------------------------------------------------------
+    llm_summaries: dict[str, str] = {}
+    llm_provider: str | None = None
+    llm_client = LLMRouter(config).resolve()
+
+    if llm_client is not None:
+        try:
+            file_infos = [
+                (fp, file_summaries[fp].key_symbols)
+                for fp in files_to_summarize
+                if fp in file_summaries
+            ]
+            folder_infos = [
+                (mod, fs.file_count)
+                for mod, fs in folder_summaries.items()
+            ]
+            file_sample = sorted(chunks_by_file.keys())
+
+            response = llm_client.summarize_codebase(
+                file_infos=file_infos,
+                folder_infos=folder_infos,
+                file_sample=file_sample,
+            )
+            llm_summaries = parse_codebase_summaries(response.text)
+            llm_provider = response.provider
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("LLM summarization failed, using heuristics: %s", exc)
+
+    # -----------------------------------------------------------------------
+    # Render
+    # -----------------------------------------------------------------------
+    _NAME_WIDTH = 36
+
     output.section("📁 Key Modules")
     if result.key_modules:
         for mod in result.key_modules:
-            output.bullet(mod)
+            desc = llm_summaries.get(f"folder:{mod}") or (
+                folder_summaries[mod].purpose if mod in folder_summaries else ""
+            )
+            label = f"{mod:<{_NAME_WIDTH}}  {desc}" if desc else mod
+            output.bullet(label)
     else:
         output.info("- (no multi-file modules detected)")
 
     output.section("📄 Important Files")
     if result.important_files:
         for fp in result.important_files:
-            output.bullet(fp)
+            desc = llm_summaries.get(f"file:{fp}") or (
+                file_summaries[fp].purpose if fp in file_summaries else ""
+            )
+            label = f"{fp:<{_NAME_WIDTH}}  {desc}" if desc else fp
+            output.bullet(label)
     else:
         output.info("- (no notable entry points detected)")
 
     output.section("🧠 Summary")
-    llm_client = LLMRouter(config).resolve()
-    if llm_client is not None:
-        try:
-            # Collect a representative file sample for the prompt.
-            import json as _json
+    if llm_provider:
+        output.kv("Provider", llm_provider)
+    project_summary = llm_summaries.get("project") or result.heuristic_summary
+    output.info(project_summary)
 
-            file_sample: list[str] = []
-            seen: set[str] = set()
-            with config.metadata_path.open("r", encoding="utf-8") as fp:
-                for line in fp:
-                    stripped = line.strip()
-                    if not stripped:
-                        continue
-                    fp_val = _json.loads(stripped).get("file_path", "")
-                    if fp_val and fp_val not in seen:
-                        seen.add(fp_val)
-                        file_sample.append(fp_val)
-                    if len(file_sample) >= 80:
-                        break
-
-            response = llm_client.overview_project(
-                key_modules=result.key_modules,
-                important_files=result.important_files,
-                file_sample=file_sample,
-            )
-            output.kv("Provider", response.provider)
-            output.info(response.text)
-            return
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("LLM overview failed, using heuristic summary: %s", exc)
-
-    output.info(result.heuristic_summary)
-    if not (config.openai_api_key or config.anthropic_api_key):
+    if not llm_provider and not (config.openai_api_key or config.anthropic_api_key):
         output.info(
-            "Tip: Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for an AI-generated summary."
+            "Tip: Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for AI-generated descriptions."
         )
 
 
