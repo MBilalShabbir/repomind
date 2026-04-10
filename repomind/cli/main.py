@@ -13,6 +13,7 @@ from repomind.core.doctor import DoctorService
 from repomind.core.embeddings import EmbeddingError, SentenceTransformerEmbedder
 from repomind.core.indexer import IGNORED_DIRECTORIES, CodeIndexer, IndexProgress
 from repomind.core.llm import LLMRouter
+from repomind.core.overview import OverviewAnalyzer
 from repomind.core.retriever import NO_INDEX_MESSAGE, CodeRetriever, RetrievalResult
 from repomind.core.summarizer import SummaryBuilder
 from repomind.utils.logging import configure_logging
@@ -412,16 +413,99 @@ def overview(
         typer.Argument(help="Path to the project root to inspect."),
     ] = Path("."),
 ) -> None:
-    """Show high-level repository overview: structure, modules, and flow."""
+    """Show high-level repository overview: key modules, important files, and summary."""
     root = path.resolve()
     if not root.exists() or not root.is_dir():
         output.error(f"Project path does not exist or is not a directory: {path}")
         raise typer.Exit(code=1)
 
-    output.section("RepoMind Overview")
+    config = _load_config()
+
+    output.section("📦 Project Overview")
     output.kv("Project", str(root))
 
-    output.subsection("• project structure")
+    has_index = (
+        config.data_dir.exists()
+        and config.index_path.exists()
+        and config.metadata_path.exists()
+    )
+
+    if has_index:
+        _overview_from_index(config, root)
+    else:
+        output.warning("No index found — showing filesystem structure only.")
+        output.info("Run `repomind index .` for richer analysis.")
+        _overview_from_filesystem(root)
+
+
+def _overview_from_index(config: RepoMindConfig, root: Path) -> None:
+    """Render overview using indexed metadata and optional LLM summary."""
+    try:
+        result = OverviewAnalyzer(config.metadata_path).analyze()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Overview analysis failed: %s", exc)
+        output.error(f"Failed to analyze index: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    output.kv("Indexed files", str(result.total_files))
+    output.kv("Indexed chunks", str(result.total_chunks))
+
+    output.section("📁 Key Modules")
+    if result.key_modules:
+        for mod in result.key_modules:
+            output.bullet(mod)
+    else:
+        output.info("- (no multi-file modules detected)")
+
+    output.section("📄 Important Files")
+    if result.important_files:
+        for fp in result.important_files:
+            output.bullet(fp)
+    else:
+        output.info("- (no notable entry points detected)")
+
+    output.section("🧠 Summary")
+    llm_client = LLMRouter(config).resolve()
+    if llm_client is not None:
+        try:
+            # Collect a representative file sample for the prompt.
+            import json as _json
+
+            file_sample: list[str] = []
+            seen: set[str] = set()
+            with config.metadata_path.open("r", encoding="utf-8") as fp:
+                for line in fp:
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    fp_val = _json.loads(stripped).get("file_path", "")
+                    if fp_val and fp_val not in seen:
+                        seen.add(fp_val)
+                        file_sample.append(fp_val)
+                    if len(file_sample) >= 80:
+                        break
+
+            response = llm_client.overview_project(
+                key_modules=result.key_modules,
+                important_files=result.important_files,
+                file_sample=file_sample,
+            )
+            output.kv("Provider", response.provider)
+            output.info(response.text)
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("LLM overview failed, using heuristic summary: %s", exc)
+
+    output.info(result.heuristic_summary)
+    if not (config.openai_api_key or config.anthropic_api_key):
+        output.info(
+            "Tip: Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for an AI-generated summary."
+        )
+
+
+def _overview_from_filesystem(root: Path) -> None:
+    """Render a basic overview from the filesystem when no index is present."""
+    output.section("📁 Key Modules")
     top_level = sorted(
         item.name + ("/" if item.is_dir() else "")
         for item in root.iterdir()
@@ -435,27 +519,28 @@ def overview(
         if len(top_level) > 20:
             output.info(f"... and {len(top_level) - 20} more")
 
-    output.subsection("• modules")
-    modules: list[str] = []
-    for file_path in root.rglob("*.py"):
+    output.section("📄 Important Files")
+    from repomind.core.overview import _IMPORTANT_NAMES
+
+    found: list[str] = []
+    for file_path in root.rglob("*"):
         if any(part in IGNORED_DIRECTORIES for part in file_path.parts):
             continue
         if any(part.startswith(".") for part in file_path.parts):
             continue
-        modules.append(str(file_path.relative_to(root)))
-    modules.sort()
-    if not modules:
-        output.info("- (no Python modules found)")
+        if file_path.name in _IMPORTANT_NAMES:
+            found.append(str(file_path.relative_to(root)))
+    found.sort()
+    if found:
+        for fp in found[:8]:
+            output.bullet(fp)
     else:
-        for module in modules[:20]:
-            output.bullet(module)
-        if len(modules) > 20:
-            output.info(f"... and {len(modules) - 20} more")
+        output.info("- (no notable entry points detected)")
 
-    output.subsection("• flow")
-    output.bullet("index: scan -> chunk -> embed -> store in .repomind/")
-    output.bullet("ask: embed question -> retrieve top-k chunks -> optional AI answer")
-    output.bullet("explain: inspect file -> local explanation -> optional AI enhancement")
+    output.section("🧠 Summary")
+    output.info(
+        "Index your repository with `repomind index .` for a full AI-powered summary."
+    )
 
 
 if __name__ == "__main__":

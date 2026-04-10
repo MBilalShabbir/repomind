@@ -33,6 +33,15 @@ class LLMClient:
         """Generate a structured explanation for a file."""
         raise NotImplementedError
 
+    def overview_project(
+        self,
+        key_modules: list[str],
+        important_files: list[str],
+        file_sample: list[str],
+    ) -> LLMResponse:
+        """Generate a high-level project summary from structural hints."""
+        raise NotImplementedError
+
 
 class OpenAIClient(LLMClient):
     """OpenAI chat client wrapper."""
@@ -63,6 +72,21 @@ class OpenAIClient(LLMClient):
     def explain_file(self, file_path: str, content: str) -> LLMResponse:
         """Generate file explanation using OpenAI."""
         prompt = _build_file_explain_prompt(file_path=file_path, content=content)
+        response = self._client.responses.create(
+            model=self._model,
+            input=prompt,
+            temperature=0.2,
+        )
+        return LLMResponse(provider=self.provider, text=response.output_text.strip())
+
+    def overview_project(
+        self,
+        key_modules: list[str],
+        important_files: list[str],
+        file_sample: list[str],
+    ) -> LLMResponse:
+        """Generate a high-level project summary using OpenAI."""
+        prompt = _build_overview_prompt(key_modules, important_files, file_sample)
         response = self._client.responses.create(
             model=self._model,
             input=prompt,
@@ -103,6 +127,22 @@ class AnthropicClient(LLMClient):
         msg = self._client.messages.create(
             model=self._model,
             max_tokens=800,
+            temperature=0.2,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return LLMResponse(provider=self.provider, text=_anthropic_text(msg))
+
+    def overview_project(
+        self,
+        key_modules: list[str],
+        important_files: list[str],
+        file_sample: list[str],
+    ) -> LLMResponse:
+        """Generate a high-level project summary using Anthropic."""
+        prompt = _build_overview_prompt(key_modules, important_files, file_sample)
+        msg = self._client.messages.create(
+            model=self._model,
+            max_tokens=400,
             temperature=0.2,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -167,6 +207,25 @@ def _build_file_explain_prompt(file_path: str, content: str) -> str:
         "Return sections: Purpose, Key Functions/Classes, Control Flow, Risks/Notes.\n\n"
         f"File: {file_path}\n\n"
         f"Content:\n{content[:18000]}"
+    )
+
+
+def _build_overview_prompt(
+    key_modules: list[str],
+    important_files: list[str],
+    file_sample: list[str],
+) -> str:
+    """Build a prompt for generating a high-level project summary."""
+    modules_text = "\n".join(f"- {m}" for m in key_modules) or "- (none detected)"
+    files_text = "\n".join(f"- {f}" for f in important_files) or "- (none detected)"
+    sample_text = "\n".join(file_sample[:60])
+    return (
+        "You are RepoMind. Based on the project structure below, write a concise "
+        "2-4 sentence summary describing what this project does and its main purpose. "
+        "Do not use markdown headers or bullet points — plain prose only.\n\n"
+        f"Key modules:\n{modules_text}\n\n"
+        f"Important files:\n{files_text}\n\n"
+        f"All indexed files (sample):\n{sample_text}"
     )
 
 
