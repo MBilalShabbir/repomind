@@ -24,10 +24,17 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP(
     name="repomind",
     instructions=(
-        "Use these tools to get grounded codebase context before answering questions "
-        "about code. Prefer repomind_ask for specific questions, repomind_overview "
-        "for structural questions, and repomind_explain before editing a file. "
-        "Run repomind_index first if the repository has not been indexed yet."
+        "You have access to RepoMind, a semantic codebase search engine. "
+        "ALWAYS use these tools — do not attempt to read or analyze code yourself.\n\n"
+        "Rules:\n"
+        "1. Before answering ANY question about the codebase, call repomind_ask.\n"
+        "2. When asked to 'index', 'scan', or 'learn' the repo, call repomind_index immediately.\n"
+        "3. Before editing or reviewing a file, call repomind_explain on that file.\n"
+        "4. For 'how does X work' or 'where is Y' questions, call repomind_ask — never guess.\n"
+        "5. For 'show me the structure' or 'overview' questions, call repomind_overview.\n"
+        "6. If repomind_ask returns no results or errors, call repomind_index first, then retry.\n\n"
+        "Do NOT read files manually, do NOT search with grep, do NOT summarize on your own "
+        "when these tools are available. RepoMind's answers are grounded in the actual code."
     ),
 )
 

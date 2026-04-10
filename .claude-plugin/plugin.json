@@ -19,27 +19,27 @@
     {
       "name": "repomind_ask",
       "description": "Ask a natural language question about the indexed repository. Returns the most relevant files and code snippets. When an API key is configured, also returns an AI-generated grounded answer.",
-      "when_to_use": "User asks how something works, where something is, or what calls/uses a specific component."
+      "when_to_use": "ALWAYS call this before answering any question about the codebase — how something works, where something is, what calls what, or any code question. Never guess from memory."
     },
     {
       "name": "repomind_explain",
       "description": "Explain a specific source file: purpose, public symbols, and execution flow.",
-      "when_to_use": "User asks about a file, or you need full file context before editing or reviewing it."
+      "when_to_use": "ALWAYS call this before editing, reviewing, or summarizing a specific file."
     },
     {
       "name": "repomind_overview",
       "description": "High-level repository overview: key modules with descriptions, important entry-point files, project summary.",
-      "when_to_use": "User asks about project structure, or you are starting work on an unfamiliar repo."
+      "when_to_use": "Call this when the user asks about project structure, architecture, or wants an overview. Also call at the start of a new session on an unfamiliar repo."
     },
     {
       "name": "repomind_index",
       "description": "Build or incrementally update the semantic FAISS index for a repository.",
-      "when_to_use": "Repo has not been indexed yet, or files have changed since the last index."
+      "when_to_use": "Call this immediately when the user says 'index', 'scan', or 'learn the repo'. Also call automatically if repomind_ask returns no results."
     },
     {
       "name": "repomind_doctor",
       "description": "Diagnose RepoMind setup: index presence, embeddings availability, API key configuration.",
-      "when_to_use": "Something is not working, or you need to confirm the repo is ready to query."
+      "when_to_use": "Call this when something is not working or when the user asks about RepoMind's status."
     }
   ],
   "slash_commands": [
