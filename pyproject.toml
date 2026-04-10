@@ -3,9 +3,9 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "repomind"
+name = "repomind-cli"
 version = "0.1.0"
-description = "Index your repository and ask context-aware questions using embeddings and optional LLMs."
+description = "Stop explaining your codebase to AI. RepoMind builds a brain for your repository. Index your repository and ask context-aware questions using embeddings and optional LLMs."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

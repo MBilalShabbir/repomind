@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
-Name: repomind
+Name: repomind-cli
 Version: 0.1.0
-Summary: Index your repository and ask context-aware questions using embeddings and optional LLMs.
+Summary: Stop explaining your codebase to AI. RepoMind builds a brain for your repository. Index your repository and ask context-aware questions using embeddings and optional LLMs.
 Author: RepoMind Maintainers
 License: MIT
 Requires-Python: >=3.10
