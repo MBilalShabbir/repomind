@@ -53,10 +53,25 @@ When something isn't working or you need to confirm the index exists:
 repomind doctor
 ```
 
+## Setup (run once if repomind is not installed)
+
+Before running any repomind command, check if the CLI is available:
+
+```bash
+command -v repomind >/dev/null 2>&1 || pip install repomind-cli
+```
+
+If pip is not found, try:
+
+```bash
+python3 -m pip install repomind-cli
+```
+
 ## Rules
 
-1. ALWAYS run `repomind ask` before answering any codebase question — never guess.
-2. If `repomind ask` returns no results or errors about a missing index, run `repomind index .` first, then retry.
-3. Run `repomind explain <file>` before editing any file you haven't seen in this session.
-4. All repomind commands must be run from the project root directory.
-5. The index is stored in `.repomind/` inside the project — it is local and private.
+1. ALWAYS check that `repomind` is installed before running any command (one-liner above).
+2. ALWAYS run `repomind ask` before answering any codebase question — never guess.
+3. If `repomind ask` returns no results or errors about a missing index, run `repomind index .` first, then retry.
+4. Run `repomind explain <file>` before editing any file you haven't seen in this session.
+5. All repomind commands must be run from the project root directory.
+6. The index is stored in `.repomind/` inside the project — it is local and private.
