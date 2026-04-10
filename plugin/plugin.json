@@ -1,0 +1,55 @@
+{
+  "name": "repomind",
+  "version": "0.1.0",
+  "description": "Gives Claude Code grounded codebase context via the RepoMind CLI.",
+  "author": "RepoMind Maintainers",
+  "license": "MIT",
+  "type": "mcp",
+  "transport": "stdio",
+  "server": {
+    "entrypoint": "server.py",
+    "runtime": "python3",
+    "args": []
+  },
+  "tools": [
+    {
+      "name": "repomind_ask",
+      "description": "Ask a natural language question about the indexed repository.",
+      "when_to_use": "User asks how something works, where something is, or what calls/uses a specific component."
+    },
+    {
+      "name": "repomind_explain",
+      "description": "Explain a specific source file: purpose, key symbols, and execution flow.",
+      "when_to_use": "User asks about a file, or you need file context before editing or reviewing it."
+    },
+    {
+      "name": "repomind_overview",
+      "description": "High-level repository overview: key modules, important files, project summary.",
+      "when_to_use": "User asks about project structure or you are starting work on an unfamiliar repo."
+    },
+    {
+      "name": "repomind_index",
+      "description": "Build or incrementally update the semantic index for a repository.",
+      "when_to_use": "Repo has not been indexed yet, or files have changed since the last index."
+    },
+    {
+      "name": "repomind_doctor",
+      "description": "Diagnose RepoMind setup: index status, embeddings, API key configuration.",
+      "when_to_use": "Something is not working or you need to confirm the repo is ready to query."
+    }
+  ],
+  "slash_commands": [
+    { "command": "/repomind-ask",      "file": "../.claude/commands/repomind-ask.md" },
+    { "command": "/repomind-explain",  "file": "../.claude/commands/repomind-explain.md" },
+    { "command": "/repomind-overview", "file": "../.claude/commands/repomind-overview.md" }
+  ],
+  "installation": {
+    "unix":    "bash plugin/install.sh",
+    "windows": "powershell -ExecutionPolicy Bypass -File plugin\\install.ps1"
+  },
+  "requirements": {
+    "python": ">=3.10",
+    "pip": ["mcp>=1.0.0"],
+    "cli": "repomind"
+  }
+}
