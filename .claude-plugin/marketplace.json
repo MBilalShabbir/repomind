@@ -1,0 +1,25 @@
+{
+  "name": "repomind",
+  "owner": {
+    "name": "Bilal",
+    "email": "mbilalshabbirr@gmail.com"
+  },
+  "metadata": {
+    "description": "Give Claude Code a semantic brain for your entire codebase. Index once, ask anything — no more pasting files into chat.",
+    "version": "1.0.0",
+    "homepage": "https://github.com/MBilalShabbir/repomind",
+    "license": "MIT"
+  },
+  "plugins": [
+    {
+      "name": "repomind",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/MBilalShabbir/repomind.git"
+      },
+      "description": "Semantic codebase search and Q&A for Claude Code. Builds a local FAISS vector index from your repo, then answers natural language questions grounded in your actual code. Works offline — no API key needed for search. Add ANTHROPIC_API_KEY or OPENAI_API_KEY for AI-generated answers.",
+      "version": "1.0.0",
+      "strict": false
+    }
+  ]
+}

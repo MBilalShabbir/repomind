@@ -54,12 +54,28 @@ repomind ask "Where is the payment logic?"
 
 RepoMind ships with a **first-class Claude Code MCP plugin** — Claude automatically gets your codebase context before answering any question.
 
-```bash
-# Install the plugin (once)
-bash plugin/install.sh
+### Option A — Plugin Marketplace (one command)
 
-# Claude now has 5 new tools:
-# repomind_ask · repomind_explain · repomind_overview · repomind_index · repomind_doctor
+```bash
+/plugin marketplace add MBilalShabbir/repomind
+/plugin install repomind@repomind
+```
+
+That's it. Claude Code downloads and registers the MCP server automatically.
+
+### Option B — Manual install
+
+```bash
+# Clone or pip-install repomind first, then:
+bash plugin/install.sh   # macOS / Linux
+# or
+powershell -ExecutionPolicy Bypass -File plugin\install.ps1  # Windows
+```
+
+Either way Claude now has 5 new tools:
+
+```
+repomind_ask · repomind_explain · repomind_overview · repomind_index · repomind_doctor
 ```
 
 Claude Code will automatically call these tools when you ask about your code — no manual prompting needed.
@@ -221,11 +237,26 @@ pip install git+https://github.com/MBilalShabbir/repomind.git
 
 For teams that use Claude Code as their primary AI IDE:
 
-```bash
-# 1. Clone the repo (or copy the plugin/ folder)
-git clone https://github.com/MBilalShabbir/repomind.git
+**Fastest (Plugin Marketplace):**
 
-# 2. Install the MCP plugin
+```bash
+# Inside Claude Code:
+/plugin marketplace add MBilalShabbir/repomind
+/plugin install repomind@repomind
+
+# Then index your project:
+cd your-project/
+repomind index .
+```
+
+**Manual setup:**
+
+```bash
+# 1. Install repomind
+pip install repomind-cli
+
+# 2. Register the MCP server
+git clone https://github.com/MBilalShabbir/repomind.git
 bash repomind/plugin/install.sh
 
 # 3. Index your project
