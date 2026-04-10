@@ -7,6 +7,7 @@
 **Index once. Ask anything. Never explain your code to AI again.**
 
 [![PyPI version](https://img.shields.io/pypi/v/repomind-cli?color=blue&label=pip%20install%20repomind-cli)](https://pypi.org/project/repomind-cli/)
+[![CI](https://github.com/MBilalShabbir/repomind/actions/workflows/ci.yml/badge.svg)](https://github.com/MBilalShabbir/repomind/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-Plugin%20Ready-blueviolet)](plugin/)

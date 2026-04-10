@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          pip install -e .
+
+      - name: Verify CLI entry point
+        run: repomind --help
+
+      - name: Verify all commands registered
+        run: |
+          repomind index --help
+          repomind ask --help
+          repomind explain --help
+          repomind overview --help
+          repomind remember --help
+          repomind forget --help
+          repomind doctor --help
+
+      - name: Import smoke test
+        run: |
+          python -c "
+          from repomind.core.config import ConfigLoader
+          from repomind.core.memory import MemoryStore
+          from repomind.core.summarizer import FileSummarizer, FolderSummarizer, SummaryBuilder
+          from repomind.core.llm import LLMRouter, parse_codebase_summaries
+          from repomind.core.overview import OverviewAnalyzer
+          print('All imports OK')
+          "
+
+      - name: Memory store unit test
+        run: |
+          python -c "
+          import tempfile, pathlib
+          from repomind.core.memory import MemoryStore
+
+          with tempfile.TemporaryDirectory() as tmp:
+              store = MemoryStore(pathlib.Path(tmp) / 'memory.json')
+              assert store.list() == []
+              n1 = store.add('note one')
+              n2 = store.add('note two')
+              assert n1.id == 1 and n2.id == 2
+              assert store.texts() == ['note one', 'note two']
+              assert store.forget(1) is True
+              assert store.forget(99) is False
+              assert len(store.list()) == 1
+          print('MemoryStore tests passed')
+          "
+
+  build-check:
+    name: Build package
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build
+        run: python -m build
+
+      - name: Check distribution
+        run: twine check dist/*
