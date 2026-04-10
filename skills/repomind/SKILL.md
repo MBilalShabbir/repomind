@@ -1,24 +1,32 @@
 ---
 name: repomind
-description: Load automatically when the user asks about their codebase, wants to index a repo, asks how code works, where something is, or asks about project structure. Use repomind CLI commands to get grounded, accurate answers instead of guessing.
+description: Load automatically when the user asks about their codebase, wants to index a repo, asks how code works, where something is, or asks about project structure. Use repomind commands to get grounded, accurate answers instead of guessing.
 ---
 
 # RepoMind — Codebase Search & Q&A
 
-Use the `repomind` CLI to answer any questions about the codebase. Always run these commands instead of reading files manually or guessing.
+RepoMind builds a semantic index of the codebase and answers questions grounded in actual code.
+
+## Step 0: Ensure repomind is installed (always run first)
+
+```bash
+python3 -m pip install repomind-cli -q && echo "repomind ready"
+```
+
+After this, run all commands using `python3 -m repomind.cli.main` instead of `repomind` — this works immediately without needing PATH changes.
 
 ## Indexing the repo
 
 When the user asks to "index", "scan", "learn", or "map" the repo:
 
 ```bash
-repomind index .
+python3 -m repomind.cli.main index .
 ```
 
-For large repos or after many file changes, use incremental update:
+For incremental update after file changes:
 
 ```bash
-repomind index . --update
+python3 -m repomind.cli.main index . --update
 ```
 
 ## Asking a question
@@ -26,7 +34,7 @@ repomind index . --update
 When the user asks how something works, where something is, what calls what, or any code question:
 
 ```bash
-repomind ask "the user's question here"
+python3 -m repomind.cli.main ask "the user's question here"
 ```
 
 ## Explaining a file
@@ -34,7 +42,7 @@ repomind ask "the user's question here"
 Before editing, reviewing, or summarizing a specific file:
 
 ```bash
-repomind explain path/to/file.py
+python3 -m repomind.cli.main explain path/to/file.py
 ```
 
 ## Project overview
@@ -42,7 +50,7 @@ repomind explain path/to/file.py
 When the user asks about project structure, architecture, or wants a map of the codebase:
 
 ```bash
-repomind overview
+python3 -m repomind.cli.main overview
 ```
 
 ## Checking status
@@ -50,28 +58,14 @@ repomind overview
 When something isn't working or you need to confirm the index exists:
 
 ```bash
-repomind doctor
-```
-
-## Setup (run once if repomind is not installed)
-
-Before running any repomind command, check if the CLI is available:
-
-```bash
-command -v repomind >/dev/null 2>&1 || pip install repomind-cli
-```
-
-If pip is not found, try:
-
-```bash
-python3 -m pip install repomind-cli
+python3 -m repomind.cli.main doctor
 ```
 
 ## Rules
 
-1. ALWAYS check that `repomind` is installed before running any command (one-liner above).
-2. ALWAYS run `repomind ask` before answering any codebase question — never guess.
-3. If `repomind ask` returns no results or errors about a missing index, run `repomind index .` first, then retry.
-4. Run `repomind explain <file>` before editing any file you haven't seen in this session.
-5. All repomind commands must be run from the project root directory.
-6. The index is stored in `.repomind/` inside the project — it is local and private.
+1. ALWAYS run the pip install check (Step 0) before the first repomind command in any session.
+2. Use `python3 -m repomind.cli.main` for all commands — never rely on `repomind` being in PATH.
+3. ALWAYS run `ask` before answering any codebase question — never guess from memory.
+4. If `ask` returns no results or errors about a missing index, run `index .` first, then retry.
+5. Run `explain <file>` before editing any file you haven't seen in this session.
+6. All commands must be run from the project root directory.
