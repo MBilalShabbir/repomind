@@ -7,13 +7,15 @@ description: Load automatically when the user asks about their codebase, wants t
 
 RepoMind builds a semantic index of the codebase and answers questions grounded in actual code.
 
-## Step 0: Ensure repomind is installed (always run first)
+## Step 0: Ensure repomind is installed (run once per session if needed)
+
+Check if already installed before attempting to install:
 
 ```bash
-python3 -m pip install repomind-cli -q && echo "repomind ready"
+python3 -c "import repomind" 2>/dev/null && echo "repomind ready" || (python3 -m pip install repomind-cli -q && echo "repomind installed")
 ```
 
-After this, run all commands using `python3 -m repomind.cli.main` instead of `repomind` — this works immediately without needing PATH changes.
+Run all commands using `python3 -m repomind.cli.main` — this works immediately without needing PATH changes.
 
 ## Indexing the repo
 
@@ -63,7 +65,7 @@ python3 -m repomind.cli.main doctor
 
 ## Rules
 
-1. ALWAYS run the pip install check (Step 0) before the first repomind command in any session.
+1. Run the Step 0 install check only if a repomind command fails with "command not found" or "No module named repomind".
 2. Use `python3 -m repomind.cli.main` for all commands — never rely on `repomind` being in PATH.
 3. ALWAYS run `ask` before answering any codebase question — never guess from memory.
 4. If `ask` returns no results or errors about a missing index, run `index .` first, then retry.
