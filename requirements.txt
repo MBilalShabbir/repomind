@@ -3,6 +3,7 @@ rich>=13.7.0
 faiss-cpu>=1.8.0.post1
 sentence-transformers>=3.0.1
 numpy>=1.26.4
+tomli>=1.2.0; python_version < "3.11"
 
 # Optional LLM providers (activate Premium mode):
 openai>=1.52.0
